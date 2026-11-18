@@ -1,4 +1,4 @@
-# SignBridge — Real-Time Sign Language Prototype
+# Signify — Real-Time Sign Language Prototype
 
 ## Project Structure
 

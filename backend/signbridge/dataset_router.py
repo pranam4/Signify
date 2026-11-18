@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from pathlib import Path
 import threading
 from typing import Any
 
@@ -10,15 +11,19 @@ from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
+from .avatar_dataset import sync_voice_to_sign_dataset
 from .config import (
     DEFAULT_CUSTOM_CLASSIFIER_PATH,
     DEFAULT_DATASET_DIR,
+    DEFAULT_DB_PATH,
+    DEFAULT_DYNAMIC_CLASSIFIER_PATH,
     DEFAULT_ISLRTC_DICTIONARY_PATH,
     DEFAULT_POSTER_REFERENCES_PATH,
     RecognizerConfig,
     config_from_env,
 )
 from .custom_classifier import CustomSignClassifier, train_landmark_classifier
+from .dynamic_recognizer import DynamicSignClassifier, train_dynamic_classifier
 from .islrtc_dataset import IslrtcDictionaryStore
 from .poster_dataset import PosterReferenceStore
 from .recognizer import SignGestureRecognizer
@@ -43,6 +48,11 @@ class TrainPayload(BaseModel):
     epochs: int = Field(default=45, ge=5, le=200)
 
 
+class SyncVoiceSignsPayload(BaseModel):
+    include_existing: bool = False
+    epochs: int = Field(default=55, ge=5, le=200)
+
+
 def get_dataset_store(app_state: Any) -> SignDatasetStore:
     store = getattr(app_state, "dataset_store", None)
     if store is None:
@@ -54,7 +64,10 @@ def get_dataset_store(app_state: Any) -> SignDatasetStore:
 def get_islrtc_store(app_state: Any) -> IslrtcDictionaryStore:
     store = getattr(app_state, "islrtc_store", None)
     if store is None:
-        store = IslrtcDictionaryStore(DEFAULT_ISLRTC_DICTIONARY_PATH)
+        store = IslrtcDictionaryStore(
+            DEFAULT_DB_PATH,
+            dictionary_path=DEFAULT_ISLRTC_DICTIONARY_PATH,
+        )
         app_state.islrtc_store = store
     return store
 
@@ -76,6 +89,23 @@ def get_custom_classifier(app_state: Any) -> CustomSignClassifier:
     return clf
 
 
+def get_dynamic_classifier(app_state: Any) -> DynamicSignClassifier:
+    dyn = getattr(app_state, "dynamic_classifier", None)
+    if dyn is not None:
+        return dyn
+    custom_clf = getattr(app_state, "custom_classifier", None)
+    if (
+        custom_clf is not None
+        and Path(custom_clf.model_path).resolve() != DEFAULT_CUSTOM_CLASSIFIER_PATH.resolve()
+    ):
+        dyn_path = Path(custom_clf.model_path).with_name("dynamic_sign_classifier.pt")
+    else:
+        dyn_path = config_from_env(running_mode="IMAGE").dynamic_classifier_path
+    dyn = DynamicSignClassifier(dyn_path)
+    app_state.dynamic_classifier = dyn
+    return dyn
+
+
 def _get_dataset_extractor(app_state: Any) -> SignGestureRecognizer:
     rec = getattr(app_state, "dataset_extractor", None)
     if rec is None:
@@ -84,9 +114,11 @@ def _get_dataset_extractor(app_state: Any) -> SignGestureRecognizer:
                 running_mode="IMAGE",
                 enable_holistic=True,
                 enable_custom_classifier=False,
-                min_hand_detection_confidence=0.25,
-                min_hand_presence_confidence=0.25,
-                min_hand_landmarks_confidence=0.25,
+                enable_dynamic_recognizer=False,
+                min_hand_detection_confidence=0.22,
+                min_hand_presence_confidence=0.22,
+                min_hand_landmarks_confidence=0.22,
+                min_pose_detection_confidence=0.45,
             )
         )
         app_state.dataset_extractor = rec
@@ -112,9 +144,27 @@ def _add_sample_sync(
         )
 
 
+def _add_sequence_sync(
+    app_state: Any,
+    frame_bytes_list: list[bytes],
+    label: str,
+    timestamps_ms: list[int] | None,
+) -> dict[str, Any]:
+    store = get_dataset_store(app_state)
+    with _DATASET_LOCK:
+        extractor = _get_dataset_extractor(app_state)
+        return store.add_sequence_from_frames(
+            frame_bytes_list,
+            label,
+            timestamps_ms=timestamps_ms,
+            recognizer=extractor,
+        )
+
+
 def _train_sync(app_state: Any, epochs: int) -> dict[str, Any]:
     store = get_dataset_store(app_state)
     classifier = get_custom_classifier(app_state)
+    dyn_classifier = get_dynamic_classifier(app_state)
     with _TRAIN_LOCK:
         training_data = store.get_training_data()
         if not training_data:
@@ -127,20 +177,38 @@ def _train_sync(app_state: Any, epochs: int) -> dict[str, Any]:
             epochs=epochs,
         )
         classifier.maybe_reload()
+
+        dyn_metrics = train_dynamic_classifier(
+            output_path=dyn_classifier.model_path or DEFAULT_DYNAMIC_CLASSIFIER_PATH,
+            user_sequences=store.get_dynamic_training_data(),
+            epochs=epochs,
+        )
+        dyn_classifier.maybe_reload()
+
         return {
             "status": "trained",
             **metrics,
             "classifier": classifier.status(),
+            "dynamic_train": dyn_metrics,
+            "dynamic_classifier": dyn_classifier.status(),
         }
 
 
 @dataset_router.get("/api/dataset")
 def dataset_overview(request: Request) -> dict[str, Any]:
-    """Return custom dataset class summary, review counts, and classifier status."""
+    """Return custom dataset class summary, review counts, database stats, and classifier status."""
     store = get_dataset_store(request.app.state)
     classifier = get_custom_classifier(request.app.state)
+    dyn_classifier = get_dynamic_classifier(request.app.state)
+    islrtc = get_islrtc_store(request.app.state)
+    islrtc._ensure_populated()
+    poster_store = get_poster_store(request.app.state)
+    poster_store._load_unlocked()
     summary = store.get_summary()
     summary["classifier"] = classifier.status()
+    summary["dynamic_classifier"] = dyn_classifier.status()
+    summary["sequences_total"] = len(store.list_sequences())
+    summary["database"] = islrtc.db.get_stats()
     return summary
 
 
@@ -204,6 +272,62 @@ async def upload_dataset_sample(
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
+@dataset_router.get("/api/dataset/sequences")
+def list_dataset_sequences(request: Request, label: str | None = None) -> dict[str, Any]:
+    """List recorded moving-sign sequences and dynamic classifier status."""
+    store = get_dataset_store(request.app.state)
+    dyn_clf = get_dynamic_classifier(request.app.state)
+    return {
+        "sequences": store.list_sequences(label=label),
+        "dynamic_classifier": dyn_clf.status(),
+    }
+
+
+@dataset_router.post("/api/dataset/sequences")
+async def upload_dataset_sequence(
+    request: Request,
+    files: list[UploadFile] = File(...),
+    label: str = Form(...),
+    timestamps_ms: str | None = Form(default=None),
+) -> dict[str, Any]:
+    """Record a multi-frame moving-sign clip for real-time dynamic sign training."""
+    frame_bytes_list: list[bytes] = []
+    for f in files:
+        raw = await f.read()
+        if raw:
+            frame_bytes_list.append(raw)
+    if len(frame_bytes_list) < 4:
+        raise HTTPException(status_code=400, detail="Need at least 4 frames for a moving sign sequence.")
+
+    parsed_ts: list[int] | None = None
+    if timestamps_ms:
+        try:
+            parsed_ts = [int(float(x.strip())) for x in timestamps_ms.split(",") if x.strip()]
+        except ValueError:
+            parsed_ts = None
+
+    try:
+        seq = await asyncio.to_thread(
+            _add_sequence_sync,
+            request.app.state,
+            frame_bytes_list,
+            label,
+            parsed_ts,
+        )
+        return {"sequence": seq}
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@dataset_router.delete("/api/dataset/sequences/{sequence_id}")
+def delete_dataset_sequence(request: Request, sequence_id: str) -> dict[str, Any]:
+    """Delete a recorded moving-sign sequence."""
+    store = get_dataset_store(request.app.state)
+    if not store.delete_sequence(sequence_id):
+        raise HTTPException(status_code=404, detail=f"Sequence {sequence_id!r} not found.")
+    return {"deleted": True, "sequence_id": sequence_id}
+
+
 @dataset_router.patch("/api/dataset/samples/{sample_id}")
 def patch_dataset_sample(
     request: Request,
@@ -262,6 +386,54 @@ async def train_custom_signs(
     epochs = payload.epochs if payload is not None else 45
     try:
         return await asyncio.to_thread(_train_sync, request.app.state, epochs)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+def _sync_voice_signs_sync(
+    app_state: Any,
+    include_existing: bool,
+    epochs: int,
+) -> dict[str, Any]:
+    store = get_dataset_store(app_state)
+    classifier = get_custom_classifier(app_state)
+    dyn_classifier = get_dynamic_classifier(app_state)
+    with _TRAIN_LOCK:
+        res = sync_voice_to_sign_dataset(
+            store=store,
+            model_path=classifier.model_path or DEFAULT_CUSTOM_CLASSIFIER_PATH,
+            include_existing=include_existing,
+            train_model=True,
+            epochs=epochs,
+        )
+        classifier.maybe_reload()
+        dyn_train = train_dynamic_classifier(
+            output_path=dyn_classifier.model_path or DEFAULT_DYNAMIC_CLASSIFIER_PATH,
+            user_sequences=store.get_dynamic_training_data(),
+            epochs=epochs,
+        )
+        dyn_classifier.maybe_reload()
+        res["classifier"] = classifier.status()
+        res["dynamic_train"] = dyn_train
+        res["dynamic_classifier"] = dyn_classifier.status()
+        return res
+
+
+@dataset_router.post("/api/dataset/sync-voice-signs")
+async def sync_voice_signs(
+    request: Request,
+    payload: SyncVoiceSignsPayload | None = None,
+) -> dict[str, Any]:
+    """Sync Voice -> Sign 3D avatar poses into Sign -> Text/Voice and retrain."""
+    include_existing = payload.include_existing if payload is not None else False
+    epochs = payload.epochs if payload is not None else 55
+    try:
+        return await asyncio.to_thread(
+            _sync_voice_signs_sync,
+            request.app.state,
+            include_existing,
+            epochs,
+        )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 

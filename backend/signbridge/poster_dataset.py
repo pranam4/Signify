@@ -15,12 +15,13 @@ import cv2
 from .config import (
     BACKEND_DIR,
     DEFAULT_CUSTOM_CLASSIFIER_PATH,
+    DEFAULT_DB_PATH,
     DEFAULT_POSTER_REFERENCES_PATH,
     RecognizerConfig,
     translate_gesture_label,
 )
 from .custom_classifier import train_landmark_classifier
-from .recognizer import SignGestureRecognizer
+from .database import SignBridgeDatabase
 from .sign_dataset import SignDatasetStore
 
 REPO_ROOT = BACKEND_DIR.parent
@@ -214,6 +215,8 @@ def ingest_posters(
     landmark_extracted = 0
     landmark_skipped = 0
 
+    from .recognizer import SignGestureRecognizer
+
     with SignGestureRecognizer(cfg) as rec:
         for spec in POSTER_SPECS:
             img_path = source_dir / spec["default_filename"]
@@ -302,6 +305,12 @@ def ingest_posters(
     }
     _atomic_write_json(references_path, payload)
 
+    db = SignBridgeDatabase(DEFAULT_DB_PATH)
+    try:
+        db.upsert_poster_references(items)
+    finally:
+        db.close()
+
     train_info = None
     if train_model:
         training_data = store.get_training_data()
@@ -323,17 +332,33 @@ def ingest_posters(
 
 
 class PosterReferenceStore:
-    """Read-only search & filter store over the cropped poster reference catalog."""
+    """SQLite-backed search & filter store over the cropped poster reference catalog."""
 
-    def __init__(self, references_path: Path = DEFAULT_POSTER_REFERENCES_PATH) -> None:
+    def __init__(
+        self,
+        references_path: Path = DEFAULT_POSTER_REFERENCES_PATH,
+        *,
+        db: SignBridgeDatabase | None = None,
+    ) -> None:
         self.references_path = Path(references_path)
         self._lock = threading.Lock()
         self._payload: dict[str, Any] | None = None
+        self._seeded = False
+        if db is not None:
+            self.db = db
+        else:
+            db_path = (
+                DEFAULT_DB_PATH
+                if self.references_path.resolve() == DEFAULT_POSTER_REFERENCES_PATH.resolve()
+                else self.references_path.with_suffix(".db")
+            )
+            self.db = SignBridgeDatabase(db_path)
 
     def reload(self) -> None:
-        """Invalidate cached JSON so subsequent queries reload from disk."""
+        """Invalidate cached metadata so subsequent queries resync from disk/DB."""
         with self._lock:
             self._payload = None
+            self._seeded = False
 
     def _load_unlocked(self) -> dict[str, Any]:
         if self._payload is not None:
@@ -350,6 +375,10 @@ class PosterReferenceStore:
             self._payload = json.loads(
                 self.references_path.read_text(encoding="utf-8")
             )
+        if not self._seeded:
+            if self.db.get_stats()["poster_cards"] == 0 and self._payload.get("items"):
+                self.db.upsert_poster_references(self._payload["items"])
+            self._seeded = True
         return self._payload
 
     def list_references(
@@ -358,34 +387,12 @@ class PosterReferenceStore:
         poster_id: str = "all",
         query: str = "",
     ) -> dict[str, Any]:
-        """Return matching poster reference cards and poster collection metadata."""
-        clean_q = " ".join((query or "").strip().lower().split())
-        pid = (poster_id or "all").strip().lower()
-
+        """Return matching poster reference cards from SQLite and poster metadata."""
         with self._lock:
             payload = self._load_unlocked()
-            items = payload.get("items", [])
             posters = payload.get("posters", [])
 
-        filtered = []
-        for item in items:
-            if pid not in ("", "all") and item.get("poster_id", "").lower() != pid:
-                continue
-            if clean_q:
-                hay = " ".join(
-                    [
-                        item.get("label", ""),
-                        item.get("en", ""),
-                        item.get("hi", ""),
-                        item.get("kn", ""),
-                        item.get("category", ""),
-                        item.get("poster_title", ""),
-                    ]
-                ).lower()
-                if clean_q not in hay:
-                    continue
-            filtered.append(item)
-
+        filtered = self.db.query_poster_references(poster_id=poster_id, query=query)
         return {
             "total": len(filtered),
             "posters": posters,

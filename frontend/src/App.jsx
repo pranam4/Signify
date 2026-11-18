@@ -10,10 +10,17 @@ import {
   Trash2,
   Volume2,
   VolumeX,
+  ArrowUpRight,
+  AudioLines,
+  BookOpen,
+  ChevronRight,
+  Sparkles,
+  Heart,
 } from "lucide-react";
 import CameraCaptureStage from "./components/CameraCaptureStage";
 import SignDatasetPanel from "./components/SignDatasetPanel";
 import SpeechToSignPanel from "./components/SpeechToSignPanel";
+import PromoVideo from "./components/PromoVideo";
 import signsData from "./data/signs.json";
 import { speakText } from "./utils/speech";
 
@@ -49,10 +56,12 @@ function formatSentenceLabel(sentenceType) {
 
 export default function App() {
   const [mode, setMode] = useState("sign-to-speech");
+  const [showGuide, setShowGuide] = useState(false);
   const [activeLanguage, setActiveLanguage] = useState("en");
   const [activeDialect, setActiveDialect] = useState(signsData.dialects[0].id);
   const [voiceEnabled, setVoiceEnabled] = useState(true);
   const [latestOutput, setLatestOutput] = useState(null);
+  const [livePreview, setLivePreview] = useState(null);
   const [history, setHistory] = useState([]);
   const [activeLoci, setActiveLoci] = useState({ left: null, right: null });
   const [spatialGrammar, setSpatialGrammar] = useState(null);
@@ -141,11 +150,14 @@ export default function App() {
     });
   }, [pushTranscriptSnapshot]);
 
-  const handleSpatialUpdate = useCallback((sg) => {
+  const handleSpatialUpdate = useCallback((sg, _holistic, liveInfo) => {
     const now = performance.now();
     if (now - lastSpatialUpdateRef.current < 120) return;
     lastSpatialUpdateRef.current = now;
     setSpatialGrammar(sg);
+    if (liveInfo !== undefined) {
+      setLivePreview(liveInfo);
+    }
   }, []);
 
   const handleDirectionalEvent = useCallback(
@@ -264,6 +276,7 @@ export default function App() {
         zone: payload.spatial_zone || "center",
         heightLevel: primaryHand?.height_level || "chest",
         handedness: primaryHand?.handedness || "Unknown",
+        recognitionSource: payload.recognition_source || "static_pose",
         sentenceType: nmm?.sentence_type || "statement",
         candidates: primaryHand?.top_gestures || [],
         time: new Date().toLocaleTimeString([], {
@@ -312,19 +325,33 @@ export default function App() {
   const referentFocus = spatialGrammar?.referent_focus || "center";
 
   return (
-    <div className="app-shell">
+    <div className={`app-shell mode-${mode}`}>
+      <a className="skip-link" href="#workspace">Skip to workspace</a>
+      <aside className="app-rail">
+        <a className="rail-brand" href="#workspace" aria-label="Signify workspace"><span className="brand-icon"><Hand size={24} /></span><span>Signify<span className="brand-period">.</span><small>A little closer, together.</small></span></a>
+        <span className="rail-label">YOUR WORKSPACE</span>
+        <nav className="rail-nav" aria-label="Translation mode">
+          {[
+            { id: "sign-to-speech", icon: Hand, title: "Sign to speech", detail: "Let your hands speak" },
+            { id: "speech-to-sign", icon: AudioLines, title: "Speech to sign", detail: "Say it with Ray" },
+            { id: "dataset", icon: BookOpen, title: "Sign library", detail: "Explore, capture & train" },
+          ].map(({ id, icon: Icon, title, detail }) => <button type="button" key={id} className={`rail-link ${mode === id ? "active" : ""}`} aria-current={mode === id ? "page" : undefined} onClick={() => setMode(id)}><Icon size={21} /><span>{title}<small>{detail}</small></span><ChevronRight size={15} /></button>)}
+        </nav>
+        <div className="rail-ray-card"><div className="ray-monogram">R<span /></div><span className="rail-label">MEET YOUR SIGNING COMPANION</span><h3>A little help from Ray.</h3><p>Turn everyday words into a more connected conversation.</p><button type="button" onClick={() => setMode("speech-to-sign")}>Say hello to Ray <ArrowUpRight size={16} /></button></div>
+        <div className="rail-bottom"><Heart size={15} /><span>Made for connection.<small>Designed for everyone.</small></span></div>
+      </aside>
+      <div className="app-content">
       <header className="top-bar">
         <div className="brand">
           <div className="brand-icon">
             <Hand size={20} />
           </div>
           <div>
-            <h1>SignBridge · Prototype</h1>
-            <p>Two-Way Camera &amp; Speech Translation Studio</p>
+            <span className="breadcrumb">Workspace <ChevronRight size={13} /> <strong>{mode === "dataset" ? "Sign library" : "Translation studio"}</strong></span>
           </div>
         </div>
 
-        <nav className="mode-tabs" aria-label="Translation Mode">
+        <nav className="mode-tabs legacy-tabs" aria-label="Translation Mode">
           <button
             type="button"
             className={`mode-tab ${mode === "sign-to-speech" ? "active" : ""}`}
@@ -366,6 +393,7 @@ export default function App() {
           <label className="select-pill" title="Spoken Output Language">
             <Globe2 size={15} />
             <select
+              aria-label="Output language"
               value={activeLanguage}
               onChange={(e) => setActiveLanguage(e.target.value)}
             >
@@ -382,14 +410,19 @@ export default function App() {
             className={`icon-btn ${voiceEnabled ? "active" : ""}`}
             onClick={() => setVoiceEnabled((v) => !v)}
             title="Toggle Speech Output"
+            aria-pressed={voiceEnabled}
           >
             {voiceEnabled ? <Volume2 size={16} /> : <VolumeX size={16} />}
             <span>{voiceEnabled ? "Voice On" : "Muted"}</span>
           </button>
         </div>
       </header>
-
-      <main className="workspace-grid">
+      <section className="workspace-intro">
+        <div><span className="eyebrow"><span /> EVERY CONVERSATION MATTERS</span><h1>{mode === "sign-to-speech" ? <>Your hands. <em>Your voice.</em></> : mode === "speech-to-sign" ? <>Your words. <em>Ray’s hands.</em></> : <>Small signs. <em>Endless possibilities.</em></>}</h1><p>{mode === "sign-to-speech" ? "Express yourself naturally. Turn your signs into words that connect." : mode === "speech-to-sign" ? "Speak, type, or choose a phrase. Ray brings your words to life." : "Build your vocabulary, explore signs, and make recognition your own."}</p></div>
+        <div className="intro-actions"><PromoVideo /><button type="button" className="guide-button" aria-expanded={showGuide} onClick={() => setShowGuide(v => !v)}><Sparkles size={16} /> Quick guide <ChevronRight size={15} /></button></div>
+      </section>
+      {showGuide && <div className="quick-guide">{(mode === "sign-to-speech" ? ["Allow camera access and keep your hands in frame.", "Hold a sign steady until the progress bar fills.", "Edit, copy, or listen to your translated words."] : mode === "speech-to-sign" ? ["Record your voice, type a sentence, or choose a phrase.", "Watch Ray sign. Slow down or replay any movement.", "Try the front or hands view for a closer look."] : ["Explore reference posters or choose a sign to train.", "Capture webcam samples or import your own images.", "Review labels, then train your custom model."]).map((tip, i) => <div key={tip}><span>0{i + 1}</span><p>{tip}</p></div>)}</div>}
+      <main id="workspace" className="workspace-grid">
         <div className="primary-stage">
           {mode === "sign-to-speech" ? (
             <CameraCaptureStage
@@ -412,10 +445,10 @@ export default function App() {
           )}
         </div>
 
-        <aside className="side-panel">
+        {mode === "sign-to-speech" && <aside className="side-panel">
           <section className="output-card">
             <div className="card-header">
-              <span>Recognized Output ({activeLangConfig.label})</span>
+              <span><Sparkles size={15} /> Live translation</span>
               {latestOutput && (
                 <button
                   type="button"
@@ -427,12 +460,30 @@ export default function App() {
               )}
             </div>
 
-            <div className="output-phrase">{displayedLatestText}</div>
+            <div className={`output-phrase ${!latestOutput ? "awaiting-sign" : ""}`} aria-live="polite">
+              {!latestOutput && <Hand size={28} />}
+              {displayedLatestText}
+            </div>
+
+            {livePreview?.candidateLabel && (
+              <div className="candidate-pills" style={{ marginTop: "6px" }}>
+                <span className="candidate-pill">
+                  {livePreview.recognitionSource === "dynamic_motion"
+                    ? `Live Motion: ${livePreview.candidateLabel}`
+                    : `Live Pose: ${livePreview.candidateLabel}`}
+                </span>
+              </div>
+            )}
 
             {latestOutput && (
               <>
                 <div className="output-meta">
                   <span>Raw label: {latestOutput.label}</span>
+                  <span>
+                    {latestOutput.recognitionSource === "dynamic_motion"
+                      ? "Moving Sign"
+                      : "Static Sign"}
+                  </span>
                   <span>Hand: {latestOutput.handedness}</span>
                   <span>Zone: {latestOutput.zone.toUpperCase()}</span>
                   {latestOutput.heightLevel && (
@@ -493,6 +544,7 @@ export default function App() {
 
             <textarea
               className="transcript-textarea"
+              aria-label="Sign to speech transcript"
               rows={3}
               value={transcriptText}
               onChange={(e) => setTranscriptText(e.target.value)}
@@ -685,8 +737,10 @@ export default function App() {
               )}
             </div>
           </section>
-        </aside>
+        </aside>}
       </main>
+      <footer className="workspace-footer"><span><Hand size={14} /> A bridge between signs and words.</span><span>Signify studio <span className="footer-dot">·</span> {activeLangConfig.label}</span></footer>
+      </div>
     </div>
   );
 }

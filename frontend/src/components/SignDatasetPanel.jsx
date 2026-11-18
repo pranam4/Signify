@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  BookOpen,
   Camera,
   CheckCircle2,
   Cpu,
@@ -11,7 +10,6 @@ import {
   Trash2,
   Upload,
 } from "lucide-react";
-import IslrtcDictionaryBrowser from "./IslrtcDictionaryBrowser";
 import PosterReferencesBrowser from "./PosterReferencesBrowser";
 
 const SUGGESTED_LABELS = [
@@ -47,6 +45,7 @@ const SUGGESTED_LABELS = [
 
 const SOURCE_FILTERS = [
   { id: "all", label: "All Sources" },
+  { id: "voice_to_sign_avatar", label: "Voice → Sign 3D Poses" },
   { id: "poster_photo", label: "First Signs (Real Photos)" },
   { id: "poster_illustrated", label: "Essentials Poster (Hands)" },
   { id: "image2_labeled", label: "Image 2 (15 Words)" },
@@ -69,7 +68,9 @@ export default function SignDatasetPanel({ onModelTrained }) {
   const [cameraActive, setCameraActive] = useState(false);
   const [capturing, setCapturing] = useState(false);
   const [captureProgress, setCaptureProgress] = useState("");
+  const [recordingSeq, setRecordingSeq] = useState(false);
   const [training, setTraining] = useState(false);
+  const [syncingVoiceSigns, setSyncingVoiceSigns] = useState(false);
   const [folderPath, setFolderPath] = useState("");
   const [importing, setImporting] = useState(false);
   const [statusMsg, setStatusMsg] = useState("");
@@ -223,6 +224,52 @@ export default function SignDatasetPanel({ onModelTrained }) {
     }
   };
 
+  const handleRecordSequence = async () => {
+    setErrorMsg("");
+    setStatusMsg("");
+    setRecordingSeq(true);
+    const frameBlobs = [];
+    const timestamps = [];
+    const startMs = performance.now();
+
+    try {
+      for (let i = 0; i < 10; i += 1) {
+        setCaptureProgress(`Recording motion ${i + 1}/10 for "${activeTargetLabel}"...`);
+        const blob = await captureCanvasBlob();
+        frameBlobs.push(blob);
+        timestamps.push(Math.round(performance.now() - startMs));
+        if (i < 9) {
+          await new Promise((r) => setTimeout(r, 125));
+        }
+      }
+      const formData = new FormData();
+      frameBlobs.forEach((b, idx) => formData.append("files", b, `seq_${idx}.jpg`));
+      formData.append("label", activeTargetLabel);
+      formData.append("timestamps_ms", timestamps.join(","));
+
+      const res = await fetch("/api/dataset/sequences", {
+        method: "POST",
+        body: formData,
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.detail || "Sequence recording failed.");
+
+      setSelectedLabel(activeTargetLabel);
+      setCustomLabelInput("");
+      setStatusMsg(
+        `Recorded moving sign clip (${data.sequence?.num_frames || 0} frames, ${
+          data.sequence?.duration_ms || 0
+        }ms) for "${activeTargetLabel}". Click Train recognition model to update live motion tracking!`
+      );
+      await loadOverview();
+    } catch (err) {
+      setErrorMsg(err?.message || "Failed to record moving sign clip.");
+    } finally {
+      setRecordingSeq(false);
+      setCaptureProgress("");
+    }
+  };
+
   const handleUploadSampleImage = async (event) => {
     const file = event.target.files?.[0];
     event.target.value = "";
@@ -294,6 +341,35 @@ export default function SignDatasetPanel({ onModelTrained }) {
     }
   };
 
+  const handleSyncVoiceSigns = async () => {
+    setErrorMsg("");
+    setStatusMsg("");
+    setSyncingVoiceSigns(true);
+    try {
+      const res = await fetch("/api/dataset/sync-voice-signs", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ include_existing: false, epochs: 55 }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.detail || "Sync failed.");
+      setStatusMsg(
+        `Synced ${data.added_classes?.length || 0} Voice → Sign class(es) (${
+          data.added_samples || 0
+        } samples). Classifier now supports ${
+          data.classifier?.num_classes || data.summary?.total_classes || 0
+        } signs!`
+      );
+      await loadOverview();
+      await loadSamples(selectedLabel, sourceFilter);
+      if (onModelTrained && data.train) onModelTrained(data.train);
+    } catch (err) {
+      setErrorMsg(err?.message || "Could not sync Voice → Sign classes.");
+    } finally {
+      setSyncingVoiceSigns(false);
+    }
+  };
+
   const handleRelabelSample = async (sampleId, newLabel, markVerified = true) => {
     setErrorMsg("");
     try {
@@ -348,21 +424,32 @@ export default function SignDatasetPanel({ onModelTrained }) {
     <section className="dataset-card">
       <div className="dataset-header">
         <div>
-          <h3>Custom ISL Sign Dataset &amp; PyTorch Trainer</h3>
+          <h3>Your sign collection</h3>
           <p>
-            Record multi-frame webcam samples, import labeled image folders, review
-            inferred Image 1 tiles, and hot-reload the live PyTorch landmark classifier.
+            Capture a sign, add your examples, and help your personal library grow.
           </p>
         </div>
-        <button
-          type="button"
-          className="mic-btn"
-          onClick={handleTrainModel}
-          disabled={training || !overview?.total_samples}
-        >
-          <Cpu size={16} />
-          <span>{training ? "Training PyTorch MLP..." : "Train / Retrain Model"}</span>
-        </button>
+        <div className="toolbar-group">
+          <button
+            type="button"
+            className="icon-btn"
+            onClick={handleSyncVoiceSigns}
+            disabled={syncingVoiceSigns || training}
+            title="Ensure all Voice -> Sign 3D avatar signs are in the Sign -> Text/Voice classifier"
+          >
+            <RefreshCw size={15} />
+            <span>{syncingVoiceSigns ? "Syncing..." : "Sync Voice → Sign"}</span>
+          </button>
+          <button
+            type="button"
+            className="mic-btn"
+            onClick={handleTrainModel}
+            disabled={training || !overview?.total_samples}
+          >
+            <Cpu size={16} />
+            <span>{training ? "Training model…" : "Train recognition model"}</span>
+          </button>
+        </div>
       </div>
 
       <div className="dataset-stats-bar">
@@ -375,12 +462,28 @@ export default function SignDatasetPanel({ onModelTrained }) {
         <span className="status-pill neutral">
           Needs Review (Img 1): {overview?.needs_review_total ?? 0}
         </span>
+        {overview?.database?.islrtc_entries > 0 && (
+          <span className="status-pill neutral">
+            ISLRTC DB: {overview.database.islrtc_entries.toLocaleString()} signs loaded
+          </span>
+        )}
         <span className={`status-pill ${classifier?.loaded ? "ws-connected" : "ws-disconnected"}`}>
           {classifier?.loaded
-            ? `Model Ready · ${classifier.num_classes} signs · ${Math.round(
+            ? `Static Model · ${classifier.num_classes} signs · ${Math.round(
                 (classifier.train_accuracy || 0) * 100
               )}% acc`
-            : "Model Not Trained"}
+            : "Static Model Not Trained"}
+        </span>
+        <span
+          className={`status-pill ${
+            overview?.dynamic_classifier?.loaded ? "ws-connected" : "ws-disconnected"
+          }`}
+        >
+          {overview?.dynamic_classifier?.loaded
+            ? `Motion Model · ${overview.dynamic_classifier.num_classes} moving signs · ${Math.round(
+                (overview.dynamic_classifier.train_accuracy || 0) * 100
+              )}% acc`
+            : "Motion Model Not Trained"}
         </span>
       </div>
 
@@ -394,7 +497,7 @@ export default function SignDatasetPanel({ onModelTrained }) {
           onClick={() => setDatasetTab("trainer")}
         >
           <Cpu size={14} />
-          <span>Landmark Dataset &amp; Trainer ({overview?.total_classes ?? 0} Classes)</span>
+          <span>My collection ({overview?.total_classes ?? 0} signs)</span>
         </button>
         <button
           type="button"
@@ -402,15 +505,7 @@ export default function SignDatasetPanel({ onModelTrained }) {
           onClick={() => setDatasetTab("posters")}
         >
           <Images size={14} />
-          <span>Uploaded Sign Posters (92 Cards)</span>
-        </button>
-        <button
-          type="button"
-          className={`icon-btn ${datasetTab === "islrtc" ? "active" : ""}`}
-          onClick={() => setDatasetTab("islrtc")}
-        >
-          <BookOpen size={14} />
-          <span>ISLRTC Official Dictionary (15,602)</span>
+          <span>Reference posters</span>
         </button>
       </div>
 
@@ -427,8 +522,6 @@ export default function SignDatasetPanel({ onModelTrained }) {
           }}
         />
       )}
-
-      {datasetTab === "islrtc" && <IslrtcDictionaryBrowser />}
 
       {datasetTab === "trainer" && (
       <div className="dataset-studio-grid">
@@ -492,7 +585,7 @@ export default function SignDatasetPanel({ onModelTrained }) {
             <button
               type="button"
               className="icon-btn active"
-              disabled={!cameraActive || capturing}
+              disabled={!cameraActive || capturing || recordingSeq}
               onClick={() => handleCaptureFrames(15)}
             >
               <Plus size={14} />
@@ -501,8 +594,21 @@ export default function SignDatasetPanel({ onModelTrained }) {
 
             <button
               type="button"
+              className="icon-btn active"
+              disabled={!cameraActive || capturing || recordingSeq}
+              onClick={handleRecordSequence}
+              title="Record a ~1.2s continuous moving sign clip for real-time dynamic recognition"
+            >
+              <RefreshCw size={14} />
+              <span>
+                {recordingSeq ? captureProgress : "Record Moving Sign (1.2s)"}
+              </span>
+            </button>
+
+            <button
+              type="button"
               className="icon-btn"
-              disabled={!cameraActive || capturing}
+              disabled={!cameraActive || capturing || recordingSeq}
               onClick={() => handleCaptureFrames(1)}
             >
               <Camera size={14} />

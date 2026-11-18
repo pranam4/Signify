@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import argparse
+import asyncio
 from datetime import datetime, timezone
 import html
 import json
@@ -19,7 +21,8 @@ try:
 except ImportError:  # pragma: no cover - optional fallback when truststore unavailable
     truststore = None  # type: ignore[assignment]
 
-from .config import DEFAULT_ISLRTC_DICTIONARY_PATH
+from .config import DEFAULT_DB_PATH, DEFAULT_ISLRTC_DICTIONARY_PATH
+from .database import SignBridgeDatabase
 
 ISLRTC_BASE_URL = "https://divyangjan.depwd.gov.in/islrtc"
 ISLRTC_DRIVE_URL = (
@@ -176,10 +179,11 @@ def _fetch_category_terms(
 def harvest_islrtc_dictionary(
     output_path: Path = DEFAULT_ISLRTC_DICTIONARY_PATH,
     *,
+    db_path: Path = DEFAULT_DB_PATH,
     category_ids: list[str] | None = None,
     timeout_seconds: float = 45.0,
 ) -> dict[str, Any]:
-    """Fetch ISLRTC categories in English, Hindi, and Kannada and write a unified JSON index."""
+    """Fetch ISLRTC categories in English, Hindi, and Kannada and persist to SQLite DB + JSON."""
     existing_videos: dict[str, str] = {}
     if output_path.is_file():
         try:
@@ -247,23 +251,34 @@ def harvest_islrtc_dictionary(
         cid = item["category_id"]
         category_counts[cid] = category_counts.get(cid, 0) + 1
 
+    categories_payload = [
+        {**cat, "count": category_counts.get(cat["id"], 0)}
+        for cat in ISLRTC_CATEGORIES
+    ]
+    tutorials_payload = list(ISLRTC_TUTORIAL_PLAYLISTS)
+
     payload: dict[str, Any] = {
         "version": 1,
         "source_url": f"{ISLRTC_BASE_URL}/",
         "drive_url": ISLRTC_DRIVE_URL,
         "harvested_at": datetime.now(timezone.utc).isoformat(),
         "total_entries": len(ordered),
-        "categories": [
-            {**cat, "count": category_counts.get(cat["id"], 0)}
-            for cat in ISLRTC_CATEGORIES
-        ],
-        "tutorials": list(ISLRTC_TUTORIAL_PLAYLISTS),
+        "categories": categories_payload,
+        "tutorials": tutorials_payload,
         "language_portals": list(ISLRTC_LANGUAGE_PORTALS),
         "entries": ordered,
     }
     _atomic_write_json(output_path, payload)
+
+    db = SignBridgeDatabase(db_path)
+    try:
+        db.upsert_islrtc_bulk(categories_payload, tutorials_payload, ordered)
+    finally:
+        db.close()
+
     return {
         "output_path": str(output_path),
+        "db_path": str(db_path),
         "total_entries": len(ordered),
         "with_hindi": sum(1 for e in ordered if e.get("hi")),
         "with_kannada": sum(1 for e in ordered if e.get("kn")),
@@ -271,82 +286,156 @@ def harvest_islrtc_dictionary(
     }
 
 
+_CORE_PREFETCH_TERMS: tuple[str, ...] = (
+    "hello",
+    "namaste",
+    "thank you",
+    "please",
+    "sorry",
+    "yes",
+    "no",
+    "help",
+    "water",
+    "milk",
+    "food",
+    "eat",
+    "drink",
+    "more",
+    "finish",
+    "home",
+    "school",
+    "book",
+    "pencil",
+    "teacher",
+    "mother",
+    "father",
+    "bathroom",
+    "toilet",
+    "hospital",
+    "doctor",
+    "medicine",
+    "ambulance",
+    "police",
+    "fire",
+    "danger",
+    "pain",
+    "sick",
+    "fever",
+    "sleep",
+    "bed",
+    "wait",
+    "stop",
+    "come",
+    "go",
+    "walk",
+    "run",
+    "sit",
+    "stand",
+    "wash",
+    "clean",
+    "work",
+    "name",
+    "what",
+    "where",
+    "when",
+    "who",
+    "how",
+    "why",
+    "good morning",
+    "welcome",
+    "happy",
+    "india",
+    "karnataka",
+    "bengaluru",
+    "hindi",
+    "kannada",
+    "english",
+    "1 one",
+    "2 two",
+    "3 three",
+    "4 four",
+    "5 five",
+    "6 six",
+    "7 seven",
+    "8 eight",
+    "9 nine",
+    "10 ten",
+)
+
+
 class IslrtcDictionaryStore:
-    """Thread-safe indexed reader & YouTube embed resolver for the ISLRTC dataset."""
+    """Thread-safe SQLite-backed search & YouTube embed resolver for the ISLRTC dataset."""
 
-    def __init__(self, dictionary_path: Path = DEFAULT_ISLRTC_DICTIONARY_PATH) -> None:
-        self.dictionary_path = Path(dictionary_path)
-        self._lock = threading.Lock()
-        self._payload: dict[str, Any] | None = None
-        self._entries_by_id: dict[str, dict[str, Any]] = {}
-        self._search_index: list[tuple[str, str, str, str, dict[str, Any]]] = []
-
-    def _load_unlocked(self) -> dict[str, Any]:
-        if self._payload is not None:
-            return self._payload
-
-        if not self.dictionary_path.is_file():
-            self._payload = {
-                "version": 1,
-                "source_url": f"{ISLRTC_BASE_URL}/",
-                "drive_url": ISLRTC_DRIVE_URL,
-                "harvested_at": None,
-                "total_entries": 0,
-                "categories": [{**c, "count": 0} for c in ISLRTC_CATEGORIES],
-                "tutorials": list(ISLRTC_TUTORIAL_PLAYLISTS),
-                "language_portals": list(ISLRTC_LANGUAGE_PORTALS),
-                "entries": [],
-            }
-        else:
-            self._payload = json.loads(
-                self.dictionary_path.read_text(encoding="utf-8")
+    def __init__(
+        self,
+        source_or_db_path: Path = DEFAULT_DB_PATH,
+        *,
+        dictionary_path: Path = DEFAULT_ISLRTC_DICTIONARY_PATH,
+        db: SignBridgeDatabase | None = None,
+    ) -> None:
+        raw_path = Path(source_or_db_path)
+        if db is not None:
+            self.db = db
+            self.dictionary_path = Path(dictionary_path)
+            self._owns_db = False
+        elif raw_path.suffix.lower() == ".json":
+            self.dictionary_path = raw_path
+            db_path = (
+                DEFAULT_DB_PATH
+                if raw_path.resolve() == DEFAULT_ISLRTC_DICTIONARY_PATH.resolve()
+                else raw_path.with_suffix(".db")
             )
+            self.db = SignBridgeDatabase(db_path)
+            self._owns_db = True
+        else:
+            self.dictionary_path = Path(dictionary_path)
+            self.db = SignBridgeDatabase(raw_path)
+            self._owns_db = True
 
-        self._rebuild_index_unlocked()
-        return self._payload
+        self._lock = threading.Lock()
+        self._seeded = False
 
-    def _rebuild_index_unlocked(self) -> None:
-        entries = self._payload.get("entries", []) if self._payload else []
-        by_id: dict[str, dict[str, Any]] = {}
-        search_rows: list[tuple[str, str, str, str, dict[str, Any]]] = []
-        for entry in entries:
-            eid = str(entry.get("id") or "")
-            if not eid:
-                continue
-            by_id[eid] = entry
-            en_l = (entry.get("en") or "").lower()
-            hi_l = (entry.get("hi") or "").lower()
-            kn_l = (entry.get("kn") or "").lower()
-            cat_l = (entry.get("category_en") or "").lower()
-            search_rows.append((en_l, hi_l, kn_l, cat_l, entry))
-        self._entries_by_id = by_id
-        self._search_index = search_rows
+    def _ensure_populated(self) -> None:
+        with self._lock:
+            if self._seeded:
+                return
+            stats = self.db.get_stats()
+            if stats["islrtc_entries"] == 0 and self.dictionary_path.is_file():
+                payload = json.loads(
+                    self.dictionary_path.read_text(encoding="utf-8")
+                )
+                cats = payload.get("categories") or [
+                    {**c, "count": 0} for c in ISLRTC_CATEGORIES
+                ]
+                tuts = payload.get("tutorials") or list(ISLRTC_TUTORIAL_PLAYLISTS)
+                entries = payload.get("entries") or []
+                self.db.upsert_islrtc_bulk(cats, tuts, entries)
+            self._seeded = True
 
     def reload(self) -> None:
-        """Clear in-memory cache so next read reloads from disk."""
+        """Clear seed guard so JSON-to-SQLite check runs on next access."""
         with self._lock:
-            self._payload = None
-            self._entries_by_id = {}
-            self._search_index = []
+            self._seeded = False
 
     def get_summary(self) -> dict[str, Any]:
-        """Return dataset statistics, categories, tutorials, and portals."""
-        with self._lock:
-            payload = self._load_unlocked()
-            entries = payload.get("entries", [])
-            return {
-                "available": self.dictionary_path.is_file(),
-                "source_url": payload.get("source_url", f"{ISLRTC_BASE_URL}/"),
-                "drive_url": payload.get("drive_url", ISLRTC_DRIVE_URL),
-                "harvested_at": payload.get("harvested_at"),
-                "total_entries": len(entries),
-                "with_hindi": sum(1 for e in entries if e.get("hi")),
-                "with_kannada": sum(1 for e in entries if e.get("kn")),
-                "cached_videos": sum(1 for e in entries if e.get("youtube_id")),
-                "categories": payload.get("categories", []),
-                "tutorials": payload.get("tutorials", []),
-                "language_portals": payload.get("language_portals", []),
-            }
+        """Return SQLite dataset statistics, categories, tutorials, and portals."""
+        self._ensure_populated()
+        stats = self.db.get_stats()
+        return {
+            "available": stats["islrtc_entries"] > 0,
+            "db_path": stats["db_path"],
+            "source_url": f"{ISLRTC_BASE_URL}/",
+            "drive_url": ISLRTC_DRIVE_URL,
+            "total_entries": stats["islrtc_entries"],
+            "with_hindi": stats["islrtc_with_hindi"],
+            "with_kannada": stats["islrtc_with_kannada"],
+            "cached_videos": stats["islrtc_cached_videos"],
+            "categories": self.db.list_islrtc_categories()
+            or [{**c, "count": 0} for c in ISLRTC_CATEGORIES],
+            "tutorials": self.db.list_islrtc_tutorials()
+            or list(ISLRTC_TUTORIAL_PLAYLISTS),
+            "language_portals": list(ISLRTC_LANGUAGE_PORTALS),
+        }
 
     @staticmethod
     def _decorate_entry(entry: dict[str, Any]) -> dict[str, Any]:
@@ -376,45 +465,16 @@ class IslrtcDictionaryStore:
         limit: int = 36,
         offset: int = 0,
     ) -> dict[str, Any]:
-        """Search ISLRTC entries across EN/HI/KN with relevance ranking and pagination."""
-        clean_q = " ".join((query or "").strip().lower().split())
-        cat_filter = (category or "all").strip().lower()
+        """Search ISLRTC SQLite entries across EN/HI/KN with relevance ranking and pagination."""
+        self._ensure_populated()
+        total, page = self.db.search_islrtc(
+            query=query,
+            category=category,
+            limit=limit,
+            offset=offset,
+        )
         safe_limit = max(1, min(100, int(limit)))
         safe_offset = max(0, int(offset))
-
-        with self._lock:
-            self._load_unlocked()
-            exact_hits: list[dict[str, Any]] = []
-            prefix_hits: list[dict[str, Any]] = []
-            contains_hits: list[dict[str, Any]] = []
-
-            for en_l, hi_l, kn_l, cat_l, entry in self._search_index:
-                if cat_filter not in ("", "all"):
-                    cid_match = str(entry.get("category_id") or "").lower() == cat_filter
-                    name_match = cat_l == cat_filter
-                    if not (cid_match or name_match):
-                        continue
-
-                if not clean_q:
-                    contains_hits.append(entry)
-                    continue
-
-                if clean_q == en_l or clean_q == hi_l or clean_q == kn_l:
-                    exact_hits.append(entry)
-                elif (
-                    en_l.startswith(clean_q)
-                    or hi_l.startswith(clean_q)
-                    or kn_l.startswith(clean_q)
-                    or f" {clean_q}" in en_l
-                ):
-                    prefix_hits.append(entry)
-                elif clean_q in en_l or clean_q in hi_l or clean_q in kn_l:
-                    contains_hits.append(entry)
-
-            matched = exact_hits + prefix_hits + contains_hits
-            total = len(matched)
-            page = matched[safe_offset : safe_offset + safe_limit]
-
         return {
             "query": query.strip(),
             "category": category,
@@ -424,13 +484,17 @@ class IslrtcDictionaryStore:
             "entries": [self._decorate_entry(item) for item in page],
         }
 
+    def match_text_entries(self, text: str, *, limit: int = 6) -> list[dict[str, Any]]:
+        """Return best-matching ISLRTC database signs for words/phrases in `text`."""
+        self._ensure_populated()
+        rows = self.db.match_text_islrtc(text, limit=limit)
+        return [self._decorate_entry(row) for row in rows]
+
     def get_entry(self, entry_id: str) -> dict[str, Any] | None:
-        """Look up a single ISLRTC entry by numeric ID."""
-        eid = str(entry_id).strip()
-        with self._lock:
-            self._load_unlocked()
-            entry = self._entries_by_id.get(eid)
-            return self._decorate_entry(entry) if entry is not None else None
+        """Look up a single ISLRTC entry in SQLite by numeric ID."""
+        self._ensure_populated()
+        entry = self.db.get_islrtc_entry(entry_id)
+        return self._decorate_entry(entry) if entry is not None else None
 
     def resolve_entry_video(
         self,
@@ -438,44 +502,122 @@ class IslrtcDictionaryStore:
         *,
         timeout_seconds: float = 20.0,
     ) -> dict[str, Any]:
-        """Return an ISLRTC entry with its official YouTube video ID resolved & cached."""
+        """Return an ISLRTC entry with its official YouTube video ID resolved & saved in SQLite."""
+        self._ensure_populated()
         eid = str(entry_id).strip()
-        with self._lock:
-            self._load_unlocked()
-            entry = self._entries_by_id.get(eid)
-            if entry is None:
-                raise KeyError(f"ISLRTC entry {eid!r} not found.")
-            if entry.get("youtube_id"):
-                return self._decorate_entry(entry)
-            portal_url = entry.get("portal_url") or (
-                f"{ISLRTC_BASE_URL}/searchpage.php?type=list&id={eid}"
-            )
+        entry = self.db.get_islrtc_entry(eid)
+        if entry is None:
+            raise KeyError(f"ISLRTC entry {eid!r} not found.")
+        if entry.get("youtube_id"):
+            return self._decorate_entry(entry)
 
+        portal_url = entry.get("portal_url") or (
+            f"{ISLRTC_BASE_URL}/searchpage.php?type=list&id={eid}"
+        )
         ssl_ctx = build_islrtc_ssl_context()
         with httpx.Client(verify=ssl_ctx, timeout=timeout_seconds, follow_redirects=True) as client:
             resp = client.get(portal_url)
             resp.raise_for_status()
             youtube_id = extract_youtube_embed_id(resp.text)
 
-        with self._lock:
-            payload = self._load_unlocked()
-            entry = self._entries_by_id.get(eid)
-            if entry is None:
-                raise KeyError(f"ISLRTC entry {eid!r} not found.")
-            if youtube_id and entry.get("youtube_id") != youtube_id:
-                entry["youtube_id"] = youtube_id
-                if self.dictionary_path.is_file():
-                    _atomic_write_json(self.dictionary_path, payload)
-            return self._decorate_entry(entry)
+        if youtube_id:
+            self.db.set_islrtc_youtube_id(eid, youtube_id)
+            entry["youtube_id"] = youtube_id
+        return self._decorate_entry(entry)
+
+    async def _prefetch_batch_async(
+        self,
+        entries: list[dict[str, Any]],
+        *,
+        concurrency: int = 12,
+        timeout_seconds: float = 25.0,
+    ) -> int:
+        ssl_ctx = build_islrtc_ssl_context()
+        sem = asyncio.Semaphore(max(1, concurrency))
+        resolved = 0
+
+        async def _fetch_one(client: httpx.AsyncClient, row: dict[str, Any]) -> None:
+            nonlocal resolved
+            async with sem:
+                try:
+                    resp = await client.get(row["portal_url"])
+                    resp.raise_for_status()
+                    yid = extract_youtube_embed_id(resp.text)
+                    if yid:
+                        self.db.set_islrtc_youtube_id(row["id"], yid)
+                        resolved += 1
+                except Exception:
+                    pass
+
+        async with httpx.AsyncClient(
+            verify=ssl_ctx,
+            timeout=timeout_seconds,
+            follow_redirects=True,
+            limits=httpx.Limits(max_connections=max(4, concurrency)),
+        ) as client:
+            await asyncio.gather(*[_fetch_one(client, item) for item in entries])
+        return resolved
+
+    def prefetch_core_videos(
+        self,
+        terms: tuple[str, ...] = _CORE_PREFETCH_TERMS,
+        *,
+        concurrency: int = 12,
+    ) -> int:
+        """Fetch and persist YouTube IDs in SQLite for high-frequency everyday/emergency words."""
+        self._ensure_populated()
+        pending: list[dict[str, Any]] = []
+        seen: set[str] = set()
+        for term in terms:
+            hits = self.search(query=term, limit=2)["entries"]
+            for item in hits:
+                if item["id"] in seen or item.get("youtube_id"):
+                    continue
+                seen.add(item["id"])
+                pending.append(item)
+                break
+        if not pending:
+            return 0
+        return asyncio.run(
+            self._prefetch_batch_async(pending, concurrency=concurrency)
+        )
 
 
 def main() -> None:
-    """CLI entrypoint to harvest the official ISLRTC dictionary into `backend/data/`."""
-    summary = harvest_islrtc_dictionary()
-    print(
-        f"ISLRTC dictionary harvested -> {summary['output_path']} "
-        f"({summary['total_entries']} entries, HI={summary['with_hindi']}, KN={summary['with_kannada']})"
+    """CLI entrypoint to harvest or load the official ISLRTC dictionary into `signbridge.db`."""
+    parser = argparse.ArgumentParser(
+        description="Load official ISLRTC dictionary and videos into SignBridge SQLite database."
     )
+    parser.add_argument(
+        "--sync-only",
+        action="store_true",
+        help="Load existing islrtc_dictionary.json into SQLite without re-scraping listpage2.php.",
+    )
+    parser.add_argument(
+        "--prefetch-videos",
+        action="store_true",
+        help="Resolve and cache official YouTube embed IDs in SQLite for core everyday/emergency signs.",
+    )
+    args = parser.parse_args()
+
+    if not args.sync_only:
+        summary = harvest_islrtc_dictionary()
+        print(
+            f"ISLRTC dictionary harvested -> {summary['db_path']} "
+            f"({summary['total_entries']} entries, HI={summary['with_hindi']}, KN={summary['with_kannada']})"
+        )
+    store = IslrtcDictionaryStore(DEFAULT_DB_PATH)
+    stats = store.get_summary()
+    print(
+        f"SQLite DB ready -> {stats['db_path']} "
+        f"(entries={stats['total_entries']}, cached_videos={stats['cached_videos']})"
+    )
+    if args.prefetch_videos:
+        count = store.prefetch_core_videos()
+        stats_after = store.get_summary()
+        print(
+            f"Prefetched {count} official YouTube sign IDs -> total cached_videos={stats_after['cached_videos']}"
+        )
 
 
 if __name__ == "__main__":

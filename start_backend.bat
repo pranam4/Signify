@@ -1,5 +1,5 @@
 @echo off
-title SignBridge Backend (Keep This Window Open)
+title Signify Backend (Keep This Window Open)
 cd /d "%~dp0backend"
 
 if not exist ".venv\Scripts\python.exe" goto :recreate_venv
@@ -46,7 +46,7 @@ if errorlevel 1 (
 )
 
 :start_server
-echo Starting SignBridge MediaPipe + Whisper backend on http://localhost:8000 ...
+echo Starting Signify MediaPipe + Whisper backend on http://localhost:8000 ...
 echo Please wait ~15-20 seconds until you see "Uvicorn running on http://127.0.0.1:8000".
 echo KEEP THIS WINDOW OPEN while using the React frontend.
 echo.

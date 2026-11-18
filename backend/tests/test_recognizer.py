@@ -7,9 +7,20 @@ from fastapi.testclient import TestClient
 import numpy as np
 import pytest
 
-from signbridge.config import RecognizerConfig, translate_gesture_label
+from signbridge.config import (
+    DEFAULT_DYNAMIC_CLASSIFIER_PATH,
+    RecognizerConfig,
+    translate_gesture_label,
+)
+from signbridge.dynamic_recognizer import (
+    DynamicSignClassifier,
+    TemporalSignTracker,
+    extract_kinematic_frame,
+    train_dynamic_classifier,
+)
 from signbridge.recognizer import (
     SignGestureRecognizer,
+    build_prediction,
     classify_spatial_zone,
     extract_observations,
 )
@@ -156,6 +167,7 @@ def test_fastapi_health_signs_and_websocket() -> None:
         assert "IMAGE" in data["running_modes"]
         assert data["holistic_enabled"] is True
         assert data["holistic_landmarks_total"] == 553
+        assert "dynamic_classifier" in data
         assert "torso_relative_signing_space" in data["spatial_grammar_features"]
 
         signs = client.get("/api/signs")
@@ -192,6 +204,8 @@ def test_fastapi_health_signs_and_websocket() -> None:
             assert reply["hands"] == []
             assert reply["locked_label"] is None
             assert reply["spatial_zone"] == "center"
+            assert reply["motion_state"] == "idle"
+            assert reply["recognition_source"] == "none"
             assert reply["holistic"]["enabled"] is True
             assert "non_manual_markers" in reply["spatial_grammar"]
 
@@ -199,3 +213,134 @@ def test_fastapi_health_signs_and_websocket() -> None:
             ws.send_bytes(jpeg_bytes)
             reply = ws.receive_json()
             assert reply["holistic"]["enabled"] is False
+
+
+def test_merge_holistic_hands_deduplicates_overlapping_wrists() -> None:
+    def _hand_lms(wx: float, wy: float) -> list[SimpleNamespace]:
+        pts = [SimpleNamespace(x=wx, y=wy, z=0.0) for _ in range(21)]
+        pts[9] = SimpleNamespace(x=wx, y=wy - 0.10, z=0.0)
+        return pts
+
+    pose = [SimpleNamespace(x=0.5, y=0.25, z=0.0, visibility=1.0) for _ in range(33)]
+    pose[11] = SimpleNamespace(x=0.62, y=0.48, z=0.0, visibility=1.0)
+    pose[12] = SimpleNamespace(x=0.38, y=0.48, z=0.0, visibility=1.0)
+
+    # GestureRecognizer detected Right hand at (0.35, 0.52); Holistic duplicated nearly same wrist under Left!
+    g_res = SimpleNamespace(
+        hand_landmarks=[_hand_lms(0.35, 0.52)],
+        hand_world_landmarks=[],
+        handedness=[[SimpleNamespace(category_name="Right", display_name="Right", score=0.9)]],
+        gestures=[[SimpleNamespace(category_name="Open_Palm", display_name="Open_Palm", score=0.8)]],
+    )
+    h_overlap = SimpleNamespace(
+        pose_landmarks=pose,
+        pose_world_landmarks=[],
+        face_landmarks=[],
+        face_blendshapes=[],
+        left_hand_landmarks=_hand_lms(0.36, 0.53),
+        left_hand_world_landmarks=[],
+        right_hand_landmarks=[],
+        right_hand_world_landmarks=[],
+    )
+    pred_dedup = build_prediction(
+        g_res,
+        timestamp_ms=100,
+        config=RecognizerConfig(enable_custom_classifier=False, enable_dynamic_recognizer=False),
+        stabilizer=GestureStabilizer(),
+        immediate=True,
+        holistic_result=h_overlap,
+    )
+    assert len(pred_dedup.hands) == 1
+
+    # Distant second Left hand at (0.70, 0.55) SHOULD be merged cleanly.
+    h_two = SimpleNamespace(
+        pose_landmarks=pose,
+        pose_world_landmarks=[],
+        face_landmarks=[],
+        face_blendshapes=[],
+        left_hand_landmarks=_hand_lms(0.70, 0.55),
+        left_hand_world_landmarks=[],
+        right_hand_landmarks=[],
+        right_hand_world_landmarks=[],
+    )
+    pred_two = build_prediction(
+        g_res,
+        timestamp_ms=120,
+        config=RecognizerConfig(enable_custom_classifier=False, enable_dynamic_recognizer=False),
+        stabilizer=GestureStabilizer(),
+        immediate=True,
+        holistic_result=h_two,
+    )
+    assert len(pred_two.hands) == 2
+
+
+def test_realtime_dynamic_moving_sign_streaming_and_idle_rejection(tmp_path) -> None:
+    from signbridge.avatar_dataset import (
+        DEFAULT_SIGN_ANIMATIONS_PATH,
+        _fk_hand_landmarks,
+        _fk_pose_landmarks,
+        _sample_track_pose,
+        load_avatar_pose_library,
+    )
+
+    if not DEFAULT_SIGN_ANIMATIONS_PATH.is_file():
+        pytest.skip("signAnimations.js not found.")
+
+    dyn_path = (
+        DEFAULT_DYNAMIC_CLASSIFIER_PATH
+        if DEFAULT_DYNAMIC_CLASSIFIER_PATH.is_file()
+        else tmp_path / "dyn_test.pt"
+    )
+    if not dyn_path.is_file():
+        train_dynamic_classifier(output_path=dyn_path, epochs=25)
+
+    lib = load_avatar_pose_library(DEFAULT_SIGN_ANIMATIONS_PATH)
+    dyn_clf = DynamicSignClassifier(dyn_path)
+    assert dyn_clf.is_loaded
+    tracker = TemporalSignTracker(dyn_clf, score_threshold=0.60, min_similarity=0.48)
+    pose = _fk_pose_landmarks(0.0)
+
+    for track_id, expected in (("goodbye", "Goodbye"), ("thank_you", "Thank You"), ("water", "Water")):
+        tracker.reset()
+        track = lib["tracks"][track_id]
+        fired = None
+        for step in range(15):
+            ts = 1000 + step * 75
+            t_eval = min(1.0, step / 12.0)
+            ps = _sample_track_pose(track, t_eval, lib["handshapes"], lib["idle"])
+            sp = ps["right"]
+            hands = [
+                SimpleNamespace(
+                    handedness="Right",
+                    landmarks=_fk_hand_landmarks(sp["wrist"], sp["palm"], sp["finger"], sp["joints"], -1),
+                )
+            ]
+            kf = extract_kinematic_frame(hands, pose_landmarks=pose)
+            trig, _, _ = tracker.update(ts, kf)
+            if trig is not None:
+                fired = trig.label
+                break
+        assert fired == expected
+
+    # Relaxed low-chest wandering idle motion must not fire a dynamic sign.
+    tracker.reset()
+    false_fired = None
+    for step in range(14):
+        u = step / 13.0
+        hands = [
+            SimpleNamespace(
+                handedness="Right",
+                landmarks=_fk_hand_landmarks(
+                    [-0.25 + 0.10 * u, 0.98 - 0.08 * np.sin(u * 2.0), 0.18],
+                    [0.4, -0.35, 0.75],
+                    [0.1, -0.85, 0.25],
+                    lib["handshapes"]["relaxed"],
+                    -1,
+                ),
+            )
+        ]
+        trig, _, _ = tracker.update(3000 + step * 75, extract_kinematic_frame(hands, pose_landmarks=pose))
+        if trig is not None:
+            false_fired = trig.label
+            break
+    assert false_fired is None

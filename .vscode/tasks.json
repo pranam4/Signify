@@ -24,7 +24,7 @@
       "presentation": {
         "reveal": "always",
         "panel": "dedicated",
-        "group": "signbridge"
+        "group": "signify"
       }
     },
     {
@@ -50,11 +50,11 @@
       "presentation": {
         "reveal": "always",
         "panel": "dedicated",
-        "group": "signbridge"
+        "group": "signify"
       }
     },
     {
-      "label": "Start SignBridge Web App",
+      "label": "Start Signify Web App",
       "dependsOn": [
         "Start Backend (FastAPI + MediaPipe)",
         "Start Frontend (React + Vite)"

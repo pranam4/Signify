@@ -259,6 +259,9 @@ export default function CameraCaptureStage({
     spatial_zone: "center",
     holistic: null,
     spatial_grammar: null,
+    motion_state: "idle",
+    motion_speed: 0,
+    recognition_source: "none",
   });
 
   const refreshDevices = useCallback(async () => {
@@ -468,9 +471,19 @@ export default function CameraCaptureStage({
 
           setPrediction(payload);
           if (onSpatialUpdateRef.current) {
+            const candText =
+              payload.candidate_label && payload.phrases?.[activeLanguage]
+                ? payload.phrases[activeLanguage]
+                : payload.candidate_label;
             onSpatialUpdateRef.current(
               payload.spatial_grammar || null,
-              payload.holistic || null
+              payload.holistic || null,
+              {
+                candidateLabel: candText || null,
+                recognitionSource: payload.recognition_source || "none",
+                motionState: payload.motion_state || "idle",
+                progress: payload.stability_progress || 0,
+              }
             );
           }
 
@@ -918,6 +931,15 @@ export default function CameraCaptureStage({
             )}
 
             <div className="badge-cluster">
+              {(prediction.motion_state === "moving" ||
+                prediction.recognition_source === "dynamic_motion") && (
+                <span className="status-pill nmm-active">Moving Sign</span>
+              )}
+              {prediction.motion_state !== "moving" &&
+                prediction.recognition_source !== "dynamic_motion" &&
+                prediction.hands?.length > 0 && (
+                  <span className="status-pill ws-connected">Static Pose</span>
+                )}
               {holisticEnabled && holisticCounts && (
                 <span className="status-pill neutral">
                   Holistic: {holisticCounts.total} pts
@@ -949,8 +971,12 @@ export default function CameraCaptureStage({
           <div className="stability-label">
             <span>
               {translatedCandidate
-                ? `Holding: ${translatedCandidate}`
-                : "Waiting for clear sign..."}
+                ? prediction.recognition_source === "dynamic_motion"
+                  ? `Moving sign: ${translatedCandidate}`
+                  : `Reading: ${translatedCandidate}`
+                : prediction.motion_state === "moving"
+                ? "Tracking hand motion..."
+                : "Show a static or moving sign..."}
             </span>
             <span>{Math.round((prediction.stability_progress || 0) * 100)}%</span>
           </div>

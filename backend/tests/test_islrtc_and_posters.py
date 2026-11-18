@@ -10,10 +10,12 @@ from fastapi.testclient import TestClient
 
 from signbridge.config import (
     DEFAULT_DATASET_DIR,
+    DEFAULT_DB_PATH,
     DEFAULT_ISLRTC_DICTIONARY_PATH,
     DEFAULT_POSTER_REFERENCES_PATH,
     translate_gesture_label,
 )
+from signbridge.database import SignBridgeDatabase
 from signbridge.islrtc_dataset import (
     IslrtcDictionaryStore,
     clean_islrtc_term,
@@ -45,14 +47,21 @@ def test_islrtc_html_parsers() -> None:
 
 def test_harvested_islrtc_dictionary_store() -> None:
     assert DEFAULT_ISLRTC_DICTIONARY_PATH.is_file()
-    store = IslrtcDictionaryStore(DEFAULT_ISLRTC_DICTIONARY_PATH)
+    assert DEFAULT_DB_PATH.is_file()
+    store = IslrtcDictionaryStore(DEFAULT_DB_PATH)
     summary = store.get_summary()
     assert summary["available"] is True
     assert summary["total_entries"] >= 15000
     assert summary["with_hindi"] >= 15000
     assert summary["with_kannada"] >= 10000
+    assert summary["cached_videos"] >= 50
     assert len(summary["categories"]) == 12
     assert len(summary["tutorials"]) == 6
+
+    db_stats = SignBridgeDatabase(DEFAULT_DB_PATH).get_stats()
+    assert db_stats["islrtc_entries"] >= 15000
+    assert db_stats["poster_cards"] == 92
+    assert db_stats["dataset_samples"] >= 113
 
     res_water = store.search(query="Water", category="1", limit=10)
     assert res_water["total"] > 0
@@ -61,6 +70,9 @@ def test_harvested_islrtc_dictionary_store() -> None:
 
     res_hi = store.search(query="धन्यवाद", limit=10)
     assert res_hi["total"] > 0
+
+    matches = store.match_text_entries("doctor at hospital", limit=4)
+    assert any("doctor" in m["en"].lower() for m in matches)
 
 
 def test_poster_references_and_extracted_samples() -> None:
@@ -133,7 +145,8 @@ def test_islrtc_and_poster_endpoints_with_mock_video(tmp_path: Path, monkeypatch
     mock_client.__enter__.return_value.get.return_value = mock_resp
 
     with TestClient(app) as client:
-        monkeypatch.setattr(app.state, "islrtc_store", IslrtcDictionaryStore(dict_path), raising=False)
+        tmp_store = IslrtcDictionaryStore(dict_path)
+        monkeypatch.setattr(app.state, "islrtc_store", tmp_store, raising=False)
 
         sum_resp = client.get("/api/islrtc/summary")
         assert sum_resp.status_code == 200
@@ -143,6 +156,10 @@ def test_islrtc_and_poster_endpoints_with_mock_video(tmp_path: Path, monkeypatch
         assert search_resp.status_code == 200
         assert search_resp.json()["entries"][0]["hi"] == "पानी"
 
+        tts_resp = client.post("/api/text-to-sign", json={"text": "water please"})
+        assert tts_resp.status_code == 200
+        assert tts_resp.json()["islrtc_matches"][0]["id"] == "29"
+
         with patch("signbridge.islrtc_dataset.httpx.Client", return_value=mock_client):
             entry_resp = client.get("/api/islrtc/entry/29")
         assert entry_resp.status_code == 200
@@ -151,3 +168,5 @@ def test_islrtc_and_poster_endpoints_with_mock_video(tmp_path: Path, monkeypatch
         refs_resp = client.get("/api/dataset/references?poster_id=p1_classroom")
         assert refs_resp.status_code == 200
         assert refs_resp.json()["total"] == 23
+
+        tmp_store.db.close()

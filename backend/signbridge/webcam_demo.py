@@ -226,7 +226,7 @@ def run_webcam_demo(camera_index: int = 0) -> None:
                     pred = latest["prediction"]
 
                 draw_hud(frame, pred)
-                cv2.imshow("SignBridge Python Holistic MediaPipe Demo (ESC / Q to quit)", frame)
+                cv2.imshow("Signify Python Holistic MediaPipe Demo (ESC / Q to quit)", frame)
 
                 key = cv2.waitKey(1) & 0xFF
                 if key in (27, ord("q"), ord("Q")):

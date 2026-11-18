@@ -21,6 +21,7 @@ DEFAULT_DB_PATH = BACKEND_DIR / "data" / "signbridge.db"
 DEFAULT_ISLRTC_DICTIONARY_PATH = BACKEND_DIR / "data" / "islrtc_dictionary.json"
 DEFAULT_POSTER_REFERENCES_PATH = BACKEND_DIR / "data" / "poster_references.json"
 DEFAULT_CUSTOM_CLASSIFIER_PATH = BACKEND_DIR / "models" / "custom_sign_classifier.pt"
+DEFAULT_DYNAMIC_CLASSIFIER_PATH = BACKEND_DIR / "models" / "dynamic_sign_classifier.pt"
 RUNNING_MODES: tuple[str, ...] = ("IMAGE", "VIDEO", "LIVE_STREAM")
 
 DEFAULT_STT_MODEL_ID = "openai/whisper-tiny"
@@ -96,8 +97,14 @@ class RecognizerConfig:
     custom_classifier_path: Path = field(
         default_factory=lambda: DEFAULT_CUSTOM_CLASSIFIER_PATH
     )
-    custom_classifier_threshold: float = 0.60
-    custom_classifier_min_similarity: float = 0.45
+    custom_classifier_threshold: float = 0.62
+    custom_classifier_min_similarity: float = 0.52
+    enable_dynamic_recognizer: bool = True
+    dynamic_classifier_path: Path = field(
+        default_factory=lambda: DEFAULT_DYNAMIC_CLASSIFIER_PATH
+    )
+    dynamic_classifier_threshold: float = 0.60
+    dynamic_classifier_min_similarity: float = 0.48
 
 
 def config_from_env(
@@ -116,8 +123,14 @@ def config_from_env(
     custom_path = (
         Path(override_custom) if override_custom else DEFAULT_CUSTOM_CLASSIFIER_PATH
     )
+    override_dynamic = os.getenv("SIGNBRIDGE_DYNAMIC_CLASSIFIER_PATH", "").strip()
+    dynamic_path = (
+        Path(override_dynamic) if override_dynamic else DEFAULT_DYNAMIC_CLASSIFIER_PATH
+    )
     raw_custom = os.getenv("SIGNBRIDGE_ENABLE_CUSTOM_CLASSIFIER", "1").strip().lower()
     enable_custom = raw_custom not in {"0", "false", "no", "off"}
+    raw_dynamic = os.getenv("SIGNBRIDGE_ENABLE_DYNAMIC_RECOGNIZER", "1").strip().lower()
+    enable_dynamic = raw_dynamic not in {"0", "false", "no", "off"}
 
     if enable_holistic is None:
         raw_holistic = os.getenv("SIGNBRIDGE_ENABLE_HOLISTIC", "1").strip().lower()
@@ -132,6 +145,8 @@ def config_from_env(
         running_mode=running_mode,
         enable_custom_classifier=enable_custom,
         custom_classifier_path=custom_path,
+        enable_dynamic_recognizer=enable_dynamic,
+        dynamic_classifier_path=dynamic_path,
     )
 
 
@@ -228,6 +243,8 @@ CUSTOM_SIGN_TRANSLATIONS: dict[str, dict[str, str]] = {
     "Fire": {"kind": "custom_sign", "en": "Fire", "hi": "आग", "kn": "ಬೆಂಕಿ"},
     "Give": {"kind": "custom_sign", "en": "Give", "hi": "देना", "kn": "ಕೊಡು"},
     "Go": {"kind": "custom_sign", "en": "Go", "hi": "जाओ", "kn": "ಹೋಗು"},
+    "Good": {"kind": "custom_sign", "en": "Good", "hi": "अच्छा", "kn": "ಒಳ್ಳೆಯದು"},
+    "Good Morning": {"kind": "custom_sign", "en": "Good morning", "hi": "सुप्रभात", "kn": "ಶುಭೋದಯ"},
     "Goodbye": {"kind": "custom_sign", "en": "Goodbye", "hi": "अलविदा", "kn": "ವಿದಾಯ"},
     "Hello": {"kind": "custom_sign", "en": "Hello", "hi": "नमस्ते", "kn": "ನಮಸ್ಕಾರ"},
     "Help": {"kind": "custom_sign", "en": "Help", "hi": "मदद", "kn": "ಸಹಾಯ"},
@@ -241,12 +258,15 @@ CUSTOM_SIGN_TRANSLATIONS: dict[str, dict[str, str]] = {
     "Jump": {"kind": "custom_sign", "en": "Jump", "hi": "कूदना", "kn": "ಜಿಗಿ"},
     "Kick": {"kind": "custom_sign", "en": "Kick", "hi": "लात मारना", "kn": "ಒದೆ"},
     "Look": {"kind": "custom_sign", "en": "Look", "hi": "देखो", "kn": "ನೋಡು"},
+    "Me": {"kind": "custom_sign", "en": "Me", "hi": "मैं / मुझे", "kn": "ನಾನು / ನನಗೆ"},
     "Me Too": {"kind": "custom_sign", "en": "Me too", "hi": "मैं भी", "kn": "ನಾನೂ ಸಹ"},
     "Meet": {"kind": "custom_sign", "en": "Meet", "hi": "मिलना", "kn": "ಭೇಟಿಯಾಗಿ"},
     "Milk": {"kind": "custom_sign", "en": "Milk", "hi": "दूध", "kn": "ಹಾಲು"},
     "Mom": {"kind": "custom_sign", "en": "Mom", "hi": "माँ", "kn": "ಅಮ್ಮ"},
     "More": {"kind": "custom_sign", "en": "More", "hi": "और अधिक", "kn": "ಇನ್ನೂ ಹೆಚ್ಚು"},
+    "My": {"kind": "custom_sign", "en": "My", "hi": "मेरा", "kn": "ನನ್ನ"},
     "My Name Is": {"kind": "custom_sign", "en": "My name is", "hi": "मेरा नाम है", "kn": "ನನ್ನ ಹೆಸರು"},
+    "Name": {"kind": "custom_sign", "en": "Name", "hi": "नाम", "kn": "ಹೆಸರು"},
     "Nice": {"kind": "custom_sign", "en": "Nice", "hi": "अच्छा", "kn": "ಚೆನ್ನಾಗಿದೆ"},
     "No": {"kind": "custom_sign", "en": "No", "hi": "नहीं", "kn": "ಇಲ್ಲ"},
     "Now": {"kind": "custom_sign", "en": "Now", "hi": "अभी", "kn": "ಈಗ"},
@@ -279,14 +299,17 @@ CUSTOM_SIGN_TRANSLATIONS: dict[str, dict[str, str]] = {
     "Want": {"kind": "custom_sign", "en": "Want", "hi": "चाहिए", "kn": "ಬೇಕು"},
     "Wash": {"kind": "custom_sign", "en": "Wash", "hi": "धोना", "kn": "ತೊಳೆ"},
     "Water": {"kind": "custom_sign", "en": "Water", "hi": "पानी", "kn": "ನೀರು"},
+    "Welcome": {"kind": "custom_sign", "en": "Welcome", "hi": "स्वागत है", "kn": "ಸ್ವಾಗತ"},
     "Wet": {"kind": "custom_sign", "en": "Wet", "hi": "गीला", "kn": "ಒದ್ದೆ"},
     "What": {"kind": "custom_sign", "en": "What", "hi": "क्या", "kn": "ಏನು"},
     "When": {"kind": "custom_sign", "en": "When", "hi": "कब", "kn": "ಯಾವಾಗ"},
     "Where": {"kind": "custom_sign", "en": "Where", "hi": "कहाँ", "kn": "ಎಲ್ಲಿ"},
+    "Who": {"kind": "custom_sign", "en": "Who", "hi": "कौन", "kn": "ಯಾರು"},
     "Work": {"kind": "custom_sign", "en": "Work", "hi": "काम", "kn": "ಕೆಲಸ"},
     "Yes": {"kind": "custom_sign", "en": "Yes", "hi": "हाँ", "kn": "ಹೌದು"},
     "You": {"kind": "custom_sign", "en": "You", "hi": "आप", "kn": "ನೀವು"},
     "You're Welcome": {"kind": "custom_sign", "en": "You're welcome", "hi": "आपका स्वागत है", "kn": "ಸ್ವಾಗತ"},
+    "Your": {"kind": "custom_sign", "en": "Your", "hi": "तुम्हारा / आपका", "kn": "ನಿಮ್ಮ"},
 }
 
 

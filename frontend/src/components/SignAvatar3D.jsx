@@ -8,6 +8,8 @@ import {
   Repeat,
   RotateCcw,
   Sparkles,
+  Maximize2,
+  Minimize2,
 } from "lucide-react";
 import {
   getTotalPlanDurationMs,
@@ -16,8 +18,8 @@ import {
 
 const CAMERA_PRESETS = {
   studio: {
-    label: "Studio 3/4",
-    pos: [0.42, 1.44, 1.48],
+    label: "Studio",
+    pos: [0.26, 1.43, 1.64],
     target: [0, 1.24, 0.08],
   },
   front: {
@@ -26,7 +28,7 @@ const CAMERA_PRESETS = {
     target: [0, 1.25, 0.08],
   },
   hands: {
-    label: "Hands Close-Up",
+    label: "Hands",
     pos: [0.18, 1.32, 0.96],
     target: [-0.04, 1.24, 0.2],
   },
@@ -214,31 +216,31 @@ function buildSignerRig(scene) {
   scene.add(avatarRoot);
 
   const skinMat = new THREE.MeshStandardMaterial({
-    color: 0xf1c29b,
-    roughness: 0.48,
-    metalness: 0.04,
+    color: 0xdba881,
+    roughness: 0.74,
+    metalness: 0,
   });
   const jacketMat = new THREE.MeshStandardMaterial({
-    color: 0x1e293b,
-    roughness: 0.62,
-    metalness: 0.14,
+    color: 0x247d78,
+    roughness: 0.9,
+    metalness: 0,
   });
   const trimMat = new THREE.MeshStandardMaterial({
-    color: 0x38bdf8,
+    color: 0xd4edce,
     roughness: 0.35,
     metalness: 0.35,
-    emissive: 0x0ea5e9,
-    emissiveIntensity: 0.22,
+    emissive: 0x629d83,
+    emissiveIntensity: 0.08,
   });
   const jointMat = new THREE.MeshStandardMaterial({
-    color: 0x334155,
+    color: 0xdba881,
     roughness: 0.45,
     metalness: 0.3,
   });
   const hairMat = new THREE.MeshStandardMaterial({
-    color: 0x172554,
-    roughness: 0.58,
-    metalness: 0.1,
+    color: 0x30231f,
+    roughness: 0.92,
+    metalness: 0,
   });
   const browMat = new THREE.MeshStandardMaterial({
     color: 0x0f172a,
@@ -284,11 +286,16 @@ function buildSignerRig(scene) {
   torsoGroup.add(collarRing);
 
   const chestStripe = new THREE.Mesh(
-    new THREE.BoxGeometry(0.022, 0.3, 0.016),
+    new THREE.BoxGeometry(0.008, 0.08, 0.012),
     trimMat
   );
-  chestStripe.position.set(0, 0.22, 0.125);
+  chestStripe.position.set(0, 0.36, 0.133);
   torsoGroup.add(chestStripe);
+
+  // Small embroidered sun emblem gives Ray a recognizable studio uniform.
+  const emblem = new THREE.Mesh(new THREE.CircleGeometry(0.024, 32), trimMat);
+  emblem.position.set(0.094, 0.3, 0.127);
+  torsoGroup.add(emblem);
 
   // Neck + Head
   const neck = new THREE.Mesh(
@@ -319,6 +326,23 @@ function buildSignerRig(scene) {
   hairCap.position.set(0, 0.015, -0.012);
   hairCap.rotation.x = -0.18;
   headGroup.add(hairCap);
+
+  for (const [x, y, z, size] of [[-0.055, 0.103, 0.045, 0.05], [0, 0.118, 0.027, 0.055], [0.047, 0.108, 0.008, 0.046]]) {
+    const lock = new THREE.Mesh(new THREE.SphereGeometry(size, 20, 16), hairMat);
+    lock.position.set(x, y, z);
+    lock.scale.set(1, 0.65, 0.8);
+    headGroup.add(lock);
+  }
+  for (const side of [-1, 1]) {
+    const ear = new THREE.Mesh(new THREE.SphereGeometry(0.023, 16, 12), skinMat);
+    ear.scale.set(0.5, 1, 0.7);
+    ear.position.set(side * 0.105, -0.003, 0);
+    headGroup.add(ear);
+  }
+  const nose = new THREE.Mesh(new THREE.SphereGeometry(0.017, 16, 12), skinMat);
+  nose.scale.set(0.72, 1, 0.9);
+  nose.position.set(0, -0.01, 0.108);
+  headGroup.add(nose);
 
   // Eyes + Pupils + Eyelid blink scale
   const makeEye = (x) => {
@@ -463,6 +487,8 @@ export default function SignAvatar3D({ signPlan, playSignal }) {
   const [looping, setLooping] = useState(false);
   const [speed, setSpeed] = useState(1);
   const [cameraPreset, setCameraPreset] = useState("studio");
+  const [expanded, setExpanded] = useState(false);
+  const [renderError, setRenderError] = useState(false);
   const [hudState, setHudState] = useState({
     stepIndex: -1,
     activeLetter: null,
@@ -474,6 +500,13 @@ export default function SignAvatar3D({ signPlan, playSignal }) {
     () => getTotalPlanDurationMs(signPlan),
     [signPlan]
   );
+
+  useEffect(() => {
+    if (!expanded) return undefined;
+    const close = (event) => { if (event.key === "Escape") setExpanded(false); };
+    document.addEventListener("keydown", close);
+    return () => document.removeEventListener("keydown", close);
+  }, [expanded]);
 
   useEffect(() => {
     planRef.current = signPlan;
@@ -536,14 +569,22 @@ export default function SignAvatar3D({ signPlan, playSignal }) {
     const height = container.clientHeight || 420;
 
     const scene = new THREE.Scene();
-    scene.background = new THREE.Color(0x050b18);
-    scene.fog = new THREE.FogExp2(0x050b18, 0.16);
+    scene.background = new THREE.Color(0x172c32);
+    scene.fog = new THREE.FogExp2(0x172c32, 0.12);
 
     const camera = new THREE.PerspectiveCamera(36, width / height, 0.1, 20);
     const initCam = CAMERA_PRESETS.studio;
     camera.position.set(...initCam.pos);
 
-    const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
+    let renderer;
+    try {
+      renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
+    } catch {
+      setRenderError(true);
+      return undefined;
+    }
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1.35;
     renderer.setSize(width, height);
     renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
     renderer.shadowMap.enabled = true;
@@ -554,37 +595,37 @@ export default function SignAvatar3D({ signPlan, playSignal }) {
     controls.target.set(...initCam.target);
     controls.enableDamping = true;
     controls.dampingFactor = 0.08;
-    controls.minDistance = 0.65;
+    controls.minDistance = 0.9;
     controls.maxDistance = 2.6;
     controls.maxPolarAngle = Math.PI * 0.62;
     controls.update();
 
     // Studio 3-point lighting (key + cyan left rim + emerald right rim)
-    scene.add(new THREE.AmbientLight(0xcbd5e1, 0.75));
-    const keyLight = new THREE.DirectionalLight(0xffffff, 1.5);
+    scene.add(new THREE.HemisphereLight(0xe8f5ee, 0x33434e, 2));
+    const keyLight = new THREE.DirectionalLight(0xffe5cb, 2.5);
     keyLight.position.set(1.2, 2.4, 2.2);
     keyLight.castShadow = true;
     keyLight.shadow.mapSize.set(1024, 1024);
     scene.add(keyLight);
 
-    const cyanRim = new THREE.PointLight(0x38bdf8, 1.4, 6);
+    const cyanRim = new THREE.PointLight(0xb0e9dd, 2, 6);
     cyanRim.position.set(-1.3, 1.65, 0.8);
     scene.add(cyanRim);
 
-    const greenRim = new THREE.PointLight(0x10b981, 1.2, 6);
+    const greenRim = new THREE.PointLight(0xffd3a8, 1.5, 6);
     greenRim.position.set(1.3, 1.55, 0.75);
     scene.add(greenRim);
 
     // Subtle signing pedestal & grid
     const pedestal = new THREE.Mesh(
       new THREE.CylinderGeometry(0.62, 0.72, 0.04, 48),
-      new THREE.MeshStandardMaterial({ color: 0x0f172a, roughness: 0.7, metalness: 0.25 })
+      new THREE.MeshStandardMaterial({ color: 0x29444a, roughness: 0.85, metalness: 0.05 })
     );
     pedestal.position.set(0, 0.75, 0);
     pedestal.receiveShadow = true;
     scene.add(pedestal);
 
-    const grid = new THREE.PolarGridHelper(0.9, 12, 4, 64, 0x38bdf8, 0x1e293b);
+    const grid = new THREE.PolarGridHelper(0.9, 12, 4, 64, 0x8fc7b7, 0x36555b);
     grid.position.set(0, 0.772, 0);
     grid.material.opacity = 0.28;
     grid.material.transparent = true;
@@ -764,9 +805,11 @@ export default function SignAvatar3D({ signPlan, playSignal }) {
       : null;
 
   return (
-    <div className="avatar-stage-shell">
+    <div className={`avatar-stage-shell ${expanded ? "expanded" : ""}`}>
+      <div className="ray-stage-title"><div className="ray-avatar-mark">R</div><div><strong>Ray</strong><span>Your signing companion</span></div><span className={`ray-status ${playing ? "is-signing" : ""}`}><i />{renderError ? "3D unavailable" : playing ? "Signing for you" : "Ready when you are"}</span><button type="button" className="stage-expand" onClick={() => setExpanded(v => !v)} aria-label={expanded ? "Minimize Ray’s stage" : "Expand Ray’s stage"} aria-pressed={expanded}>{expanded ? <Minimize2 size={17} /> : <Maximize2 size={17} />}</button></div>
       <div className="avatar-viewport-wrap">
-        <div ref={mountRef} className="avatar-canvas-mount" />
+        <div ref={mountRef} className="avatar-canvas-mount" role="img" aria-label="Ray, an animated 3D signing companion. Drag to rotate; use the camera buttons for preset views." />
+        {renderError && <div className="avatar-render-fallback" role="status"><Sparkles size={32} /><h3>Ray needs a 3D-capable browser</h3><p>Enable hardware acceleration or use the Video / Cue Card view to follow along.</p></div>}
 
         <div className="avatar-hud-top">
           <div className="avatar-gloss-badge">
@@ -776,7 +819,7 @@ export default function SignAvatar3D({ signPlan, playSignal }) {
                 ? activeStep.type === "fingerspell" && hudState.activeLetter
                   ? `FINGERSPELL · ${activeStep.gloss} [${hudState.activeLetter}]`
                   : activeStep.gloss
-                : "3D SIGNING AVATAR READY"}
+                : "HELLO, I’M RAY"}
             </span>
           </div>
           <span className="avatar-nmm-pill">{formatNmmStatus(signPlan)}</span>
@@ -838,6 +881,7 @@ export default function SignAvatar3D({ signPlan, playSignal }) {
             className={`icon-btn ${looping ? "active" : ""}`}
             onClick={() => setLooping((l) => !l)}
             title="Loop playback"
+            aria-pressed={looping}
           >
             <Repeat size={15} />
             <span>Loop</span>
@@ -846,6 +890,7 @@ export default function SignAvatar3D({ signPlan, playSignal }) {
           <label className="select-pill" title="Signing Speed">
             <span>Speed</span>
             <select
+              aria-label="Ray’s signing speed"
               value={speed}
               onChange={(e) => setSpeed(Number(e.target.value))}
             >
@@ -865,6 +910,7 @@ export default function SignAvatar3D({ signPlan, playSignal }) {
               type="button"
               className={`chip-btn ${cameraPreset === key ? "selected" : ""}`}
               onClick={() => handleSelectCameraPreset(key)}
+              aria-pressed={cameraPreset === key}
             >
               {item.label}
             </button>
@@ -874,14 +920,10 @@ export default function SignAvatar3D({ signPlan, playSignal }) {
 
       {steps.length > 0 && (
         <div className="avatar-timeline-wrap">
-          <div className="stability-track">
-            <div
-              className="stability-fill"
-              style={{ width: `${hudState.progressPct}%` }}
-            />
-          </div>
+          <div className="timeline-label"><span>FOLLOW ALONG</span><span>{Math.round(totalDurationMs * hudState.progressPct / 100000)}s / {(totalDurationMs / 1000).toFixed(1)}s</span></div>
+          <input className="avatar-seek" type="range" min="0" max="100" value={hudState.progressPct} aria-label="Ray’s signing progress" style={{ "--progress": `${hudState.progressPct}%` }} onChange={(event) => { const pct = Number(event.target.value); elapsedRef.current = totalDurationMs * pct / 100; setHudState(current => ({ ...current, progressPct: pct })); }} />
           <div className="sign-sequence-strip">
-            <small>Gloss Timeline:</small>
+            <small>Signs</small>
             {steps.map((step, idx) => (
               <button
                 key={`${step.id}-${idx}`}

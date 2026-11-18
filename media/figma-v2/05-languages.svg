@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1920" height="1080" viewBox="0 0 1920 1080">
+<rect width="1920" height="1080" fill="#102E2D"/>
+<circle cx="1570" cy="420" r="480" fill="#163B34"/>
+<circle cx="1580" cy="420" r="360" fill="none" stroke="#33594A" stroke-width="2"/>
+<text x="100" y="105" fill="#D6EFAE" font-family="Segoe UI, Inter, sans-serif" font-size="46" font-weight="700">signify.</text>
+<text x="1580" y="95" fill="#A2BCB1" font-family="Segoe UI, Inter, sans-serif" font-size="21" font-weight="400">17–21 SEC</text>
+<text x="100" y="260" fill="#D6EFAE" font-family="Segoe UI, Inter, sans-serif" font-size="20" font-weight="600">EVERY CONVERSATION MATTERS</text>
+<text x="94" y="395" fill="#F4F7EF" font-family="Segoe UI, Inter, sans-serif" font-size="83" font-weight="700">More ways</text>
+<text x="94" y="498" fill="#D6EFAE" font-family="Segoe UI, Inter, sans-serif" font-size="83" font-weight="700">to connect.</text>
+<text x="100" y="590" fill="#B7CCC0" font-family="Segoe UI, Inter, sans-serif" font-size="28" font-weight="400">Language, expression and context come together.</text>
+<rect x="100" y="690" width="640" height="50" rx="25" fill="#24473C" stroke="#4D6E52"/>
+<text x="125" y="723" fill="#D6EFAE" font-family="Segoe UI, Inter, sans-serif" font-size="22" font-weight="500">DIALECT SELECTION</text>
+<rect x="100" y="755" width="640" height="50" rx="25" fill="#24473C" stroke="#4D6E52"/>
+<text x="125" y="788" fill="#D6EFAE" font-family="Segoe UI, Inter, sans-serif" font-size="22" font-weight="500">REFERENCE VIDEO + CUE CARDS</text>
+<rect x="1000" y="260" width="820" height="570" rx="35" fill="#0B2525" opacity="0.4"/>
+<rect x="980" y="240" width="820" height="570" rx="35" fill="#204238" stroke="#54765C"/>
+<text x="1030" y="315" fill="#E3F1D3" font-family="Segoe UI, Inter, sans-serif" font-size="34" font-weight="600">Beyond words alone</text>
+<rect x="1025" y="370" width="730" height="96" rx="18" fill="#D6EFAE"/>
+<text x="1060" y="429" fill="#173A2D" font-family="Segoe UI, Inter, sans-serif" font-size="28" font-weight="500">English · Hindi · Kannada</text>
+<rect x="1025" y="495" width="730" height="96" rx="18" fill="#D6EFAE"/>
+<text x="1060" y="554" fill="#173A2D" font-family="Segoe UI, Inter, sans-serif" font-size="28" font-weight="500">Hands + face + body</text>
+<rect x="1025" y="620" width="730" height="96" rx="18" fill="#D6EFAE"/>
+<text x="1060" y="679" fill="#173A2D" font-family="Segoe UI, Inter, sans-serif" font-size="28" font-weight="500">Spatial cues · Directional signing</text>
+<path d="M100 950 H1820" stroke="#4D6E52"/>
+<text x="100" y="1008" fill="#A2BCB1" font-family="Segoe UI, Inter, sans-serif" font-size="25" font-weight="400">A bridge between signs and words.</text>
+<text x="1450" y="1008" fill="#D6EFAE" font-family="Segoe UI, Inter, sans-serif" font-size="20" font-weight="400">SIGNIFY / FEATURE FILM</text>
+</svg>

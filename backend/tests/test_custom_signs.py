@@ -4,12 +4,22 @@ from __future__ import annotations
 
 from pathlib import Path
 from types import SimpleNamespace
+import json
 
 import cv2
 from fastapi.testclient import TestClient
 import numpy as np
 import pytest
 
+from signbridge.avatar_dataset import (
+    DEFAULT_SIGN_ANIMATIONS_PATH,
+    _fk_hand_landmarks,
+    _fk_pose_landmarks,
+    _sample_track_pose,
+    load_avatar_pose_library,
+    sync_voice_to_sign_dataset,
+    track_id_to_label,
+)
 from signbridge.config import (
     DEFAULT_CUSTOM_CLASSIFIER_PATH,
     DEFAULT_DATASET_DIR,
@@ -17,12 +27,16 @@ from signbridge.config import (
     translate_gesture_label,
 )
 from signbridge.custom_classifier import (
+    ENRICHED_FEATURE_DIM,
     FEATURE_DIM,
     CustomSignClassifier,
+    enrich_sign_features,
     extract_sign_features,
+    mirror_feature_vector,
     train_landmark_classifier,
 )
-from signbridge.recognizer import SignGestureRecognizer
+from signbridge.dynamic_recognizer import DynamicSignClassifier
+from signbridge.recognizer import SignGestureRecognizer, _select_static_custom_predictions
 from signbridge.server import app
 from signbridge.sign_dataset import SignDatasetStore
 from signbridge.sign_planner import text_to_sign_plan
@@ -199,3 +213,268 @@ def test_dataset_api_crud_import_and_train(tmp_path: Path, monkeypatch: pytest.M
         signs_resp = client.get("/api/signs")
         assert signs_resp.status_code == 200
         assert "Change" in signs_resp.json()["custom_signs"]
+
+
+def _build_fk_sample_for_track(lib: dict, track_id: str, t_val: float = 0.55) -> tuple[np.ndarray, int]:
+    track = lib["tracks"][track_id]
+    pose_state = _sample_track_pose(track, t_val, lib["handshapes"], lib["idle"])
+    pose_lms = _fk_pose_landmarks(pose_state.get("torsoYaw", 0.0))
+    hands = []
+    if "right" in pose_state:
+        r = pose_state["right"]
+        hands.append(
+            SimpleNamespace(
+                handedness="Right",
+                landmarks=_fk_hand_landmarks(r["wrist"], r["palm"], r["finger"], r["joints"], -1),
+            )
+        )
+    if "left" in pose_state:
+        l = pose_state["left"]
+        hands.append(
+            SimpleNamespace(
+                handedness="Left",
+                landmarks=_fk_hand_landmarks(l["wrist"], l["palm"], l["finger"], l["joints"], 1),
+            )
+        )
+    return extract_sign_features(hands, pose_landmarks=pose_lms), len(hands)
+
+
+def _build_fk_sample_for_char(lib: dict, ch: str) -> np.ndarray:
+    spec = lib["letters"][ch]
+    joints = lib["handshapes"].get(spec["shape"]) or lib["handshapes"]["relaxed"]
+    pose_lms = _fk_pose_landmarks(0.0)
+    rh = SimpleNamespace(
+        handedness="Right",
+        landmarks=_fk_hand_landmarks([-0.16, 1.32, 0.30], spec["palm"], spec["finger"], joints, -1),
+    )
+    return extract_sign_features([rh], pose_landmarks=pose_lms)
+
+
+def test_mirror_feature_vector_swaps_handedness() -> None:
+    pose = [SimpleNamespace(x=0.5, y=0.5, z=0.0, visibility=1.0) for _ in range(33)]
+    pose[11] = SimpleNamespace(x=0.65, y=0.6, z=0.0, visibility=1.0)
+    pose[12] = SimpleNamespace(x=0.35, y=0.6, z=0.0, visibility=1.0)
+
+    vec = extract_sign_features([_synthetic_hand("Right", (0.28, 0.45), 0.14)], pose_landmarks=pose)
+    assert np.allclose(vec[126:128], [0.0, 1.0])
+
+    mirrored = mirror_feature_vector(vec)
+    assert mirrored.shape == (FEATURE_DIM,)
+    assert np.allclose(mirrored[126:128], [1.0, 0.0])
+    assert np.allclose(mirrored[63:126], 0.0)
+    assert not np.allclose(mirrored[0:63], 0.0)
+    assert np.allclose(mirror_feature_vector(mirrored), vec, atol=1e-5)
+
+
+def test_sync_voice_to_sign_dataset_isolated(tmp_path: Path) -> None:
+    if not DEFAULT_SIGN_ANIMATIONS_PATH.is_file():
+        pytest.skip("signAnimations.js not found.")
+
+    tmp_store = SignDatasetStore(tmp_path / "ds")
+    tmp_clf_path = tmp_path / "voice_sign_clf.pt"
+    res = sync_voice_to_sign_dataset(
+        store=tmp_store,
+        model_path=tmp_clf_path,
+        epochs=30,
+    )
+    assert res["added_samples"] > 0
+    for expected in ("Water", "Good Morning", "Sleep", "Wait", "Danger", "0", "7", "8"):
+        assert expected in res["added_classes"]
+    assert res["summary"]["total_classes"] >= 80
+    assert res["train"]["train_accuracy"] >= 0.85
+
+    clf = CustomSignClassifier(tmp_clf_path)
+    assert clf.is_loaded
+    lib = load_avatar_pose_library(DEFAULT_SIGN_ANIMATIONS_PATH)
+
+    for track_id, expected_label in (("water", "Water"), ("sleep", "Sleep"), ("good_morning", "Good Morning")):
+        vec, num_hands = _build_fk_sample_for_track(lib, track_id)
+        assert clf.predict(vec, top_k=1)[0].label == expected_label
+        if num_hands == 1:
+            assert clf.predict(mirror_feature_vector(vec), top_k=1)[0].label == expected_label
+
+    for ch in ("0", "7", "8"):
+        vec = _build_fk_sample_for_char(lib, ch)
+        assert clf.predict(vec, top_k=1)[0].label == ch
+        assert clf.predict(mirror_feature_vector(vec), top_k=1)[0].label == ch
+
+
+def test_sync_voice_signs_endpoint(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    if not DEFAULT_SIGN_ANIMATIONS_PATH.is_file():
+        pytest.skip("signAnimations.js not found.")
+
+    tmp_store = SignDatasetStore(tmp_path / "ds")
+    tmp_clf = CustomSignClassifier(tmp_path / "clf.pt")
+    with TestClient(app) as client:
+        monkeypatch.setattr(app.state, "dataset_store", tmp_store, raising=False)
+        monkeypatch.setattr(app.state, "custom_classifier", tmp_clf, raising=False)
+
+        resp = client.post("/api/dataset/sync-voice-signs", json={"epochs": 20})
+        assert resp.status_code == 200
+        payload = resp.json()
+        assert payload["added_samples"] > 0
+        assert "Water" in payload["added_classes"]
+        assert payload["classifier"]["loaded"] is True
+
+        signs_resp = client.get("/api/signs")
+        assert signs_resp.status_code == 200
+        assert "Water" in signs_resp.json()["custom_signs"]
+        assert "Good Morning" in signs_resp.json()["custom_signs"]
+
+
+def test_bootstrapped_voice_to_sign_coverage() -> None:
+    if not DEFAULT_DATASET_DIR.is_dir() or not DEFAULT_CUSTOM_CLASSIFIER_PATH.is_file():
+        pytest.skip("Bootstrapped dataset artifacts not generated.")
+
+    store = SignDatasetStore(DEFAULT_DATASET_DIR)
+    summary = store.get_summary()
+    by_label_lower = {c["label"].lower(): c for c in summary["classes"]}
+
+    signs_json = DEFAULT_SIGN_ANIMATIONS_PATH.parents[1] / "data" / "signs.json"
+    phrases = json.loads(signs_json.read_text(encoding="utf-8")).get("speechToSignPhrases", [])
+    for phrase in phrases:
+        pid = phrase["id"]
+        if pid == "give_a_to_b":
+            assert "give" in by_label_lower
+        elif pid == "what_name":
+            assert all(tok in by_label_lower for tok in ("what", "your", "name"))
+        else:
+            assert track_id_to_label(pid).lower() in by_label_lower, f"Missing phrase sign: {pid}"
+
+    expected_new_tracks = (
+        "water",
+        "good_morning",
+        "sleep",
+        "wait",
+        "danger",
+        "welcome",
+        "good",
+        "name",
+        "who",
+        "your",
+        "my",
+        "me",
+        "come",
+        "go",
+        "wash",
+        "work",
+        "give_a_to_b",
+    )
+    lib = load_avatar_pose_library(DEFAULT_SIGN_ANIMATIONS_PATH)
+    clf = CustomSignClassifier(DEFAULT_CUSTOM_CLASSIFIER_PATH)
+
+    for track_id in expected_new_tracks:
+        label = track_id_to_label(track_id)
+        assert label.lower() in by_label_lower
+        tr = translate_gesture_label(label)
+        assert tr.get("hi") and tr.get("kn")
+        vec, num_hands = _build_fk_sample_for_track(lib, track_id)
+        assert clf.predict(vec, top_k=1)[0].label == label
+        if num_hands == 1:
+            assert clf.predict(mirror_feature_vector(vec), top_k=1)[0].label == label
+
+    for ch in ("0", "7", "8"):
+        assert ch.lower() in by_label_lower
+        vec = _build_fk_sample_for_char(lib, ch)
+        assert clf.predict(vec, top_k=1)[0].label == ch
+        assert clf.predict(mirror_feature_vector(vec), top_k=1)[0].label == ch
+
+
+def test_enriched_features_ood_and_offhand_fallback(tmp_path: Path) -> None:
+    if not DEFAULT_SIGN_ANIMATIONS_PATH.is_file():
+        pytest.skip("signAnimations.js not found.")
+
+    lib = load_avatar_pose_library(DEFAULT_SIGN_ANIMATIONS_PATH)
+    pose = _fk_pose_landmarks(0.0)
+    water_vec, _ = _build_fk_sample_for_track(lib, "water")
+    sleep_vec, _ = _build_fk_sample_for_track(lib, "sleep")
+
+    enriched = enrich_sign_features(water_vec)
+    assert enriched.shape == (ENRICHED_FEATURE_DIM,)
+
+    ckpt = tmp_path / "ood_clf.pt"
+    train_landmark_classifier({"Water": [water_vec], "Sleep": [sleep_vec]}, output_path=ckpt, epochs=30)
+    clf = CustomSignClassifier(ckpt)
+
+    # Empty / all-zero feature vector must yield strict zero similarity & confidence.
+    zero_preds = clf.predict(np.zeros(FEATURE_DIM, dtype=np.float32), top_k=2, min_similarity=0.58)
+    assert zero_preds[0].similarity == 0.0
+    assert zero_preds[0].score == 0.0
+
+    # Active Water hand paired with a resting low lap hand must still recover Water via dominant-hand fallback.
+    ps_w = _sample_track_pose(lib["tracks"]["water"], 0.55, lib["handshapes"], lib["idle"])
+    sp_w = ps_w["right"]
+    active_hand = SimpleNamespace(
+        handedness="Right",
+        spatial_zone="center",
+        height_level="head",
+        wrist_xy=(0.40, 0.34),
+        landmarks=_fk_hand_landmarks(sp_w["wrist"], sp_w["palm"], sp_w["finger"], sp_w["joints"], -1),
+    )
+    resting_hand = SimpleNamespace(
+        handedness="Left",
+        spatial_zone="left",
+        height_level="low",
+        wrist_xy=(0.75, 0.88),
+        landmarks=_fk_hand_landmarks([0.30, 0.96, 0.16], [-0.7, 0.1, 0.7], [-0.12, -0.95, 0.25], lib["handshapes"]["relaxed"], 1),
+    )
+    preds = _select_static_custom_predictions(
+        [active_hand, resting_hand],
+        pose,
+        clf,
+        RecognizerConfig(custom_classifier_threshold=0.62, custom_classifier_min_similarity=0.58),
+    )
+    assert preds and preds[0].label == "Water"
+    assert preds[0].score >= 0.62
+
+
+def test_dataset_sequences_api_crud_and_train(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    ref_goodbye = DEFAULT_DATASET_DIR / "images" / "Goodbye" / "img2_goodbye.jpg"
+    if not ref_goodbye.is_file():
+        pytest.skip("Reference Goodbye image not found.")
+    img = cv2.imread(str(ref_goodbye))
+    assert img is not None
+    # Upscale & border-pad so MediaPipe reliably detects hand on all frames of synthetic clip.
+    big = cv2.copyMakeBorder(cv2.resize(img, (320, 320)), 40, 40, 40, 40, cv2.BORDER_REPLICATE)
+    ok, enc = cv2.imencode(".jpg", big)
+    assert ok
+    frame_bytes = enc.tobytes()
+
+    tmp_store = SignDatasetStore(tmp_path / "ds")
+    tmp_clf = CustomSignClassifier(tmp_path / "clf.pt")
+    tmp_dyn = DynamicSignClassifier(tmp_path / "dyn.pt")
+
+    with TestClient(app) as client:
+        monkeypatch.setattr(app.state, "dataset_store", tmp_store, raising=False)
+        monkeypatch.setattr(app.state, "custom_classifier", tmp_clf, raising=False)
+        monkeypatch.setattr(app.state, "dynamic_classifier", tmp_dyn, raising=False)
+
+        files = [("files", (f"f{i}.jpg", frame_bytes, "image/jpeg")) for i in range(6)]
+        resp = client.post(
+            "/api/dataset/sequences",
+            files=files,
+            data={"label": "Goodbye", "timestamps_ms": "0,120,240,360,480,600"},
+        )
+        assert resp.status_code == 200
+        seq_id = resp.json()["sequence"]["sequence_id"]
+        assert resp.json()["sequence"]["num_frames"] == 6
+
+        listed = client.get("/api/dataset/sequences")
+        assert listed.status_code == 200
+        assert any(s["sequence_id"] == seq_id for s in listed.json()["sequences"])
+
+        # Add one static sample and trigger /api/dataset/train (trains both static & dynamic!).
+        up = client.post(
+            "/api/dataset/samples",
+            files={"file": ("g0.jpg", frame_bytes, "image/jpeg")},
+            data={"label": "Goodbye", "source": "webcam"},
+        )
+        assert up.status_code == 200
+        tr = client.post("/api/dataset/train", json={"epochs": 15})
+        assert tr.status_code == 200
+        assert tr.json()["dynamic_classifier"]["loaded"] is True
+        assert tr.json()["dynamic_classifier"]["num_classes"] >= 40
+
+        deleted = client.delete(f"/api/dataset/sequences/{seq_id}")
+        assert deleted.status_code == 200
+        assert deleted.json()["deleted"] is True

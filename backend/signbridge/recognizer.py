@@ -4,7 +4,7 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict, dataclass, field
 import threading
 import time
-from typing import Any, Callable
+from typing import Any, Callable, Sequence, Sequence
 
 import cv2
 import mediapipe as mp
@@ -16,6 +16,11 @@ from .config import (
     translate_gesture_label,
 )
 from .custom_classifier import CustomSignClassifier, extract_sign_features
+from .dynamic_recognizer import (
+    DynamicSignClassifier,
+    TemporalSignTracker,
+    extract_kinematic_frame,
+)
 from .model_manager import ensure_model_asset
 from .spatial_grammar import (
     SpatialGrammarState,
@@ -85,6 +90,9 @@ class FramePrediction:
     phrases: dict[str, str]
     holistic: dict[str, Any] | None = None
     spatial_grammar: SpatialGrammarState | None = None
+    motion_state: str = "idle"
+    motion_speed: float = 0.0
+    recognition_source: str = "none"
 
     def to_ws_dict(
         self,
@@ -130,6 +138,9 @@ class FramePrediction:
             "locked_score": round(self.locked_score, 3),
             "spatial_zone": self.spatial_zone,
             "phrases": self.phrases,
+            "motion_state": self.motion_state,
+            "motion_speed": round(self.motion_speed, 3),
+            "recognition_source": self.recognition_source,
         }
 
         if self.holistic is not None:
@@ -317,8 +328,18 @@ def _merge_holistic_hands(
             continue
 
         landmarks = _landmarks_to_points(raw_lms)
-        world_landmarks = _landmarks_to_points(raw_world)
         wrist = landmarks[0]
+        mid_mcp = landmarks[9] if len(landmarks) > 9 else wrist
+        palm_span = float(np.hypot(mid_mcp.x - wrist.x, mid_mcp.y - wrist.y))
+        dedup_radius = max(0.08, 0.85 * palm_span)
+        if any(
+            float(np.hypot(wrist.x - existing.wrist_xy[0], wrist.y - existing.wrist_xy[1])) < dedup_radius
+            for existing in merged
+        ):
+            # Same physical hand detected with opposite handedness by Holistic vs GestureRecognizer.
+            continue
+
+        world_landmarks = _landmarks_to_points(raw_world)
         if signing_space is not None:
             zone, height_level, rel_x, rel_y = classify_torso_relative_position(
                 wrist.x, wrist.y, signing_space
@@ -412,6 +433,64 @@ def _serialize_holistic_payload(
     return payload
 
 
+def _select_static_custom_predictions(
+    hands: list[HandObservation],
+    pose_lms: Sequence[Any] | None,
+    custom_classifier: CustomSignClassifier,
+    config: RecognizerConfig,
+) -> list[Any]:
+    """Run static classifier with dominant-hand fallback if an off-hand rests in frame."""
+    features = extract_sign_features(hands, pose_landmarks=pose_lms)
+    preds = custom_classifier.predict(
+        features,
+        top_k=4,
+        min_similarity=config.custom_classifier_min_similarity,
+    )
+    if len(hands) < 2:
+        return preds
+
+    best_full = preds[0] if preds else None
+    has_resting_hand = any(h.height_level == "low" or h.wrist_xy[1] >= 0.78 for h in hands)
+    full_weak = (
+        best_full is None
+        or best_full.score < config.custom_classifier_threshold
+        or best_full.similarity < config.custom_classifier_min_similarity
+    )
+    if not (has_resting_hand or full_weak):
+        return preds
+
+    # Test single active hands individually so an idle resting arm never ruins 1-hand signs.
+    best_single_preds: list[Any] | None = None
+    best_single_score = -1.0
+    for hand in hands:
+        if len(hands) > 1 and (hand.height_level == "low" or hand.wrist_xy[1] >= 0.84):
+            continue
+        s_feats = extract_sign_features([hand], pose_landmarks=pose_lms)
+        s_preds = custom_classifier.predict(
+            s_feats,
+            top_k=4,
+            min_similarity=config.custom_classifier_min_similarity,
+        )
+        if not s_preds:
+            continue
+        top_s = s_preds[0]
+        if (
+            top_s.score >= max(0.70, config.custom_classifier_threshold)
+            and top_s.similarity >= max(0.65, config.custom_classifier_min_similarity)
+            and top_s.score > best_single_score
+        ):
+            best_single_score = top_s.score
+            best_single_preds = s_preds
+
+    if best_single_preds is not None and (
+        best_full is None
+        or full_weak
+        or best_single_score > best_full.score + 0.08
+    ):
+        return best_single_preds
+    return preds
+
+
 def build_prediction(
     result: GestureRecognizerResult,
     timestamp_ms: int,
@@ -422,8 +501,9 @@ def build_prediction(
     holistic_result: HolisticLandmarkerResult | None = None,
     spatial_tracker: SpatialGrammarTracker | None = None,
     custom_classifier: CustomSignClassifier | None = None,
+    temporal_tracker: TemporalSignTracker | None = None,
 ) -> FramePrediction:
-    """Extract hand + holistic observations, compute spatial grammar, and smooth signs."""
+    """Extract hand + holistic observations, compute spatial grammar, and run static+dynamic recognition."""
     signing_space = None
     if holistic_result is not None:
         baseline_x = (
@@ -452,24 +532,29 @@ def build_prediction(
     if primary_hand is None and hands:
         primary_hand = hands[0]
 
+    pose_lms = (
+        getattr(holistic_result, "pose_landmarks", None)
+        if holistic_result is not None
+        else None
+    )
+    face_lms = (
+        getattr(holistic_result, "face_landmarks", None)
+        if holistic_result is not None
+        else None
+    )
+
+    static_source = "stock_gesture" if (primary_hand and primary_hand.gesture != "None") else "none"
     if (
         primary_hand is not None
         and custom_classifier is not None
         and config.enable_custom_classifier
     ):
-        pose_lms = (
-            getattr(holistic_result, "pose_landmarks", None)
-            if holistic_result is not None
-            else None
-        )
-        features = extract_sign_features(hands, pose_landmarks=pose_lms)
-        custom_preds = custom_classifier.predict(
-            features,
-            top_k=3,
-            min_similarity=config.custom_classifier_min_similarity,
+        custom_preds = _select_static_custom_predictions(
+            hands, pose_lms, custom_classifier, config
         )
         if custom_preds:
             top_custom = custom_preds[0]
+            second_score = custom_preds[1].score if len(custom_preds) > 1 else 0.0
             stock_label = primary_hand.gesture
             stock_score = primary_hand.gesture_score
             custom_cands = [
@@ -486,11 +571,16 @@ def build_prediction(
             ]
             primary_hand.top_gestures = merged_cands[:4]
 
-            if top_custom.score >= config.custom_classifier_threshold and (
-                stock_label == "None" or top_custom.score >= stock_score * 0.85
+            margin_ok = (top_custom.score - second_score) >= 0.08 or top_custom.similarity >= 0.72
+            if (
+                top_custom.score >= config.custom_classifier_threshold
+                and top_custom.similarity >= config.custom_classifier_min_similarity
+                and margin_ok
+                and (stock_label == "None" or top_custom.score >= stock_score * 0.85)
             ):
                 primary_hand.gesture = top_custom.label
                 primary_hand.gesture_score = top_custom.score
+                static_source = "static_pose"
 
     spatial_state: SpatialGrammarState | None = None
     holistic_payload: dict[str, Any] | None = None
@@ -502,8 +592,8 @@ def build_prediction(
         ]
         spatial_state = tracker.update(
             timestamp_ms=timestamp_ms,
-            pose_landmarks=getattr(holistic_result, "pose_landmarks", None),
-            face_landmarks=getattr(holistic_result, "face_landmarks", None),
+            pose_landmarks=pose_lms,
+            face_landmarks=face_lms,
             face_blendshapes=getattr(holistic_result, "face_blendshapes", None),
             hand_entries=hand_entries,
             left_fallback=config.left_zone_max_x,
@@ -534,21 +624,106 @@ def build_prediction(
             phrases=translate_gesture_label(active_label),
             holistic=holistic_payload,
             spatial_grammar=spatial_state,
+            motion_state="static" if has_valid_gesture else "idle",
+            motion_speed=0.0,
+            recognition_source=static_source if has_valid_gesture else "none",
         )
 
+    # Temporal / Real-Time VIDEO + LIVE_STREAM pipeline: dynamic moving-sign tracker + static stabilizer.
+    motion_speed = 0.0
+    motion_state = "idle"
+    dyn_trigger = None
+    dyn_cands: list[Any] = []
+
+    if temporal_tracker is not None and config.enable_dynamic_recognizer:
+        head_yaw_r = spatial_state.non_manual_markers.head_yaw_ratio if spatial_state else 0.0
+        head_pitch_r = spatial_state.non_manual_markers.head_pitch_ratio if spatial_state else 0.0
+        kframe = extract_kinematic_frame(
+            hands,
+            pose_landmarks=pose_lms,
+            face_landmarks=face_lms,
+            head_yaw_ratio=head_yaw_r,
+            head_pitch_ratio=head_pitch_r,
+        )
+        dyn_trigger, dyn_cands, motion_speed = temporal_tracker.update(timestamp_ms, kframe)
+
+        if dyn_trigger is not None:
+            stabilizer.mark_external_lock(dyn_trigger.label, now=timestamp_ms / 1000.0)
+            if primary_hand is not None:
+                dyn_cand_objs = [
+                    GestureCandidate(
+                        category_name=c.label,
+                        score=c.score,
+                        display_name="dynamic_motion",
+                    )
+                    for c in dyn_trigger.candidates
+                ]
+                seen_dyn = {c.category_name for c in dyn_cand_objs}
+                primary_hand.top_gestures = (
+                    dyn_cand_objs
+                    + [c for c in primary_hand.top_gestures if c.category_name not in seen_dyn]
+                )[:4]
+                primary_hand.gesture = dyn_trigger.label
+                primary_hand.gesture_score = dyn_trigger.score
+            return FramePrediction(
+                timestamp_ms=timestamp_ms,
+                hands=hands,
+                candidate_label=dyn_trigger.label,
+                stability_progress=1.0,
+                locked_label=dyn_trigger.label,
+                locked_score=dyn_trigger.score,
+                spatial_zone=primary_hand.spatial_zone if primary_hand else "center",
+                phrases=translate_gesture_label(dyn_trigger.label),
+                holistic=holistic_payload,
+                spatial_grammar=spatial_state,
+                motion_state="dynamic",
+                motion_speed=motion_speed,
+                recognition_source="dynamic_motion",
+            )
+
+    # Suppress mid-motion blur frames from locking spurious static classes while hands are sweeping.
+    is_brisk_motion = motion_speed >= 1.15
+    if is_brisk_motion:
+        stabilizer.notify_motion_boundary()
+        motion_state = "moving"
+        static_in_label = None
+        static_in_score = 0.0
+    else:
+        static_in_label = primary_hand.gesture if primary_hand else None
+        static_in_score = primary_hand.gesture_score if primary_hand else 0.0
+        if hands:
+            motion_state = "settled" if motion_speed >= 0.25 else "static"
+
     stability = stabilizer.update(
-        label=primary_hand.gesture if primary_hand else None,
-        score=primary_hand.gesture_score if primary_hand else 0.0,
+        label=static_in_label,
+        score=static_in_score,
         now=timestamp_ms / 1000.0,
     )
 
-    active_label = stability.locked_label or stability.candidate_label
+    live_dyn_lead = dyn_cands[0] if (dyn_cands and dyn_cands[0].score >= 0.45) else None
+    if stability.locked_label:
+        cand_label = stability.locked_label
+        rec_source = static_source
+    elif is_brisk_motion and live_dyn_lead is not None:
+        cand_label = live_dyn_lead.label
+        rec_source = "dynamic_motion"
+    elif stability.candidate_label:
+        cand_label = stability.candidate_label
+        rec_source = static_source
+    elif live_dyn_lead is not None:
+        cand_label = live_dyn_lead.label
+        rec_source = "dynamic_motion"
+    else:
+        cand_label = None
+        rec_source = "none"
+
+    active_label = stability.locked_label or cand_label
     phrases = translate_gesture_label(active_label)
 
     return FramePrediction(
         timestamp_ms=timestamp_ms,
         hands=hands,
-        candidate_label=stability.candidate_label,
+        candidate_label=cand_label,
         stability_progress=stability.progress,
         locked_label=stability.locked_label,
         locked_score=stability.locked_score,
@@ -556,6 +731,9 @@ def build_prediction(
         phrases=phrases,
         holistic=holistic_payload,
         spatial_grammar=spatial_state,
+        motion_state=motion_state,
+        motion_speed=motion_speed,
+        recognition_source=rec_source,
     )
 
 
@@ -590,6 +768,21 @@ class SignGestureRecognizer:
         self._custom_classifier = (
             CustomSignClassifier(self.config.custom_classifier_path)
             if self.config.enable_custom_classifier
+            else None
+        )
+        self._dynamic_classifier = (
+            DynamicSignClassifier(self.config.dynamic_classifier_path)
+            if self.config.enable_dynamic_recognizer
+            else None
+        )
+        self._temporal_tracker = (
+            TemporalSignTracker(
+                self._dynamic_classifier,
+                score_threshold=self.config.dynamic_classifier_threshold,
+                min_similarity=self.config.dynamic_classifier_min_similarity,
+                cooldown_seconds=self.config.cooldown_seconds,
+            )
+            if self.config.enable_dynamic_recognizer
             else None
         )
         self._last_timestamp_ms = 0
@@ -635,7 +828,7 @@ class SignGestureRecognizer:
                     with self._holistic_lock:
                         if self._latest_holistic is not None:
                             h_ts, h_val = self._latest_holistic
-                            if abs(timestamp_ms - h_ts) <= 350:
+                            if abs(timestamp_ms - h_ts) <= 150:
                                 holistic_res = h_val
                 pred = build_prediction(
                     result,
@@ -645,6 +838,7 @@ class SignGestureRecognizer:
                     holistic_result=holistic_res,
                     spatial_tracker=self._spatial_tracker,
                     custom_classifier=self._custom_classifier,
+                    temporal_tracker=self._temporal_tracker,
                 )
                 if self._result_callback is not None:
                     self._result_callback(pred)
@@ -776,6 +970,7 @@ class SignGestureRecognizer:
             holistic_result=holistic_result,
             spatial_tracker=self._spatial_tracker,
             custom_classifier=self._custom_classifier,
+            temporal_tracker=self._temporal_tracker,
         )
 
     def process_async_rgb(

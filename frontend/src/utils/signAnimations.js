@@ -70,6 +70,20 @@ export const HANDSHAPES = {
     ring: [0.05, 0.06, 0.04, -0.12],
     pinky: [1.35, 1.48, 1.1, -0.04],
   },
+  seven_hand: {
+    thumb: [0.52, 0.62, 0.24, 0.96],
+    index: [0.04, 0.05, 0.04, 0.14],
+    middle: [0.04, 0.05, 0.04, 0.02],
+    ring: [1.05, 1.12, 0.78, -0.02],
+    pinky: [0.05, 0.06, 0.04, -0.14],
+  },
+  eight_hand: {
+    thumb: [0.5, 0.58, 0.24, 0.88],
+    index: [0.04, 0.05, 0.04, 0.14],
+    middle: [1.05, 1.12, 0.78, 0.0],
+    ring: [0.05, 0.06, 0.04, -0.04],
+    pinky: [0.05, 0.06, 0.04, -0.16],
+  },
   ily: {
     thumb: [0.04, 0.04, 0.65, 0.18],
     index: [0.03, 0.04, 0.03, 0.08],
@@ -211,8 +225,8 @@ const LETTER_HANDSHAPE = {
   "4": { shape: "four_hand", palm: [0, 0, 1], finger: [0, 1, 0] },
   "5": { shape: "open_spread", palm: [0, 0, 1], finger: [0, 1, 0] },
   "6": { shape: "w_hand", palm: [0, 0, 1], finger: [0, 1, 0] },
-  "7": { shape: "w_hand", palm: [0, 0, 1], finger: [0, 1, 0] },
-  "8": { shape: "w_hand", palm: [0, 0, 1], finger: [0, 1, 0] },
+  "7": { shape: "seven_hand", palm: [0, 0, 1], finger: [0, 1, 0] },
+  "8": { shape: "eight_hand", palm: [0, 0, 1], finger: [0, 1, 0] },
   "9": { shape: "f_hand", palm: [0, 0, 1], finger: [0, 1, 0] },
 };
 

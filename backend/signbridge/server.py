@@ -22,6 +22,7 @@ from .dataset_router import (
     dataset_router,
     get_custom_classifier,
     get_dataset_store,
+    get_dynamic_classifier,
     get_islrtc_store,
     get_poster_store,
 )
@@ -71,7 +72,7 @@ async def lifespan(application: FastAPI):
             application.state.stt_service = None
 
 
-app = FastAPI(title="SignBridge MediaPipe Backend", version="0.3.0", lifespan=lifespan)
+app = FastAPI(title="Signify MediaPipe Backend", version="0.3.0", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
@@ -129,11 +130,16 @@ def health_check() -> dict[str, object]:
     )
     stt = get_stt_service(app.state)
     custom_clf = get_custom_classifier(app.state)
+    dynamic_clf = get_dynamic_classifier(app.state)
+    islrtc = get_islrtc_store(app.state)
+    islrtc._ensure_populated()
     return {
         "status": "ok",
         "model": model_path.name,
         "custom_model": model_path.resolve() != DEFAULT_MODEL_PATH.resolve(),
         "custom_classifier": custom_clf.status(),
+        "dynamic_classifier": dynamic_clf.status(),
+        "database": islrtc.db.get_stats(),
         "holistic_enabled": cfg.enable_holistic,
         "holistic_model": holistic_path.name if cfg.enable_holistic else None,
         "holistic_landmarks_total": 553 if cfg.enable_holistic else 0,
@@ -177,12 +183,17 @@ def list_signs() -> dict[str, object]:
 
 @app.post("/api/text-to-sign")
 def plan_text_to_sign(payload: TextToSignRequest) -> dict[str, object]:
-    """Convert spoken/typed text into ordered sign gloss steps and NMM cues."""
-    return text_to_sign_plan(
+    """Convert spoken/typed text into ordered sign gloss steps, NMM cues, and DB video matches."""
+    plan = text_to_sign_plan(
         payload.text,
         language=payload.language,
         dialect=payload.dialect,
     ).to_dict()
+    plan["islrtc_matches"] = get_islrtc_store(app.state).match_text_entries(
+        payload.text,
+        limit=6,
+    )
+    return plan
 
 
 @app.post("/api/recognize-image")

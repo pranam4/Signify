@@ -12,3 +12,7 @@ dist/
 # Downloaded model bundles (auto-fetched on startup)
 backend/models/*.task
 backend/models/*.tmp
+
+# SQLite transient journal files
+backend/data/*.db-wal
+backend/data/*.db-shm

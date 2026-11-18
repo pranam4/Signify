@@ -39,6 +39,29 @@ class GestureStabilizer:
         """Clear buffered frame history."""
         self._history.clear()
 
+    def notify_motion_boundary(self) -> None:
+        """Trim stale transition votes when hands shift briskly toward a new sign."""
+        if len(self._history) > 1:
+            newest = self._history[-1]
+            self._history.clear()
+            self._history.append(newest)
+
+    def mark_external_lock(self, label: str, now: float | None = None) -> None:
+        """Record a dynamic-motion lock so static voting stays debounced cleanly."""
+        ts = time.monotonic() if now is None else now
+        self._last_locked_label = label
+        self._last_locked_at = ts
+        self._history.clear()
+
+    def is_in_cooldown(self, label: str, now: float | None = None) -> bool:
+        """Check whether `label` was locked within cooldown_seconds."""
+        ts = time.monotonic() if now is None else now
+        return bool(
+            label
+            and label == self._last_locked_label
+            and (ts - self._last_locked_at) < self.cooldown_seconds
+        )
+
     def update(
         self,
         label: str | None,

@@ -35,7 +35,7 @@ def ensure_model_asset(
         try:
             req = urllib.request.Request(
                 model_url,
-                headers={"User-Agent": "SignBridge-Hackathon/0.1"},
+                headers={"User-Agent": "Signify-Hackathon/0.1"},
             )
             with urllib.request.urlopen(req, timeout=timeout_seconds) as resp:
                 with tmp_path.open("wb") as out_file:

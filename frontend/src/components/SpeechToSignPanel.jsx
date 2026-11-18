@@ -1,19 +1,19 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  BookOpen,
   Box,
   Check,
   Copy,
+  ExternalLink,
   FileAudio,
   Hand,
   Mic,
   MicOff,
+  Play,
   Radio,
   Send,
   Trash2,
   Video,
 } from "lucide-react";
-import IslrtcDictionaryBrowser from "./IslrtcDictionaryBrowser";
 import SignAvatar3D from "./SignAvatar3D";
 import { buildLocalSignPlan } from "../utils/signAnimations";
 import { getSpeechRecognitionCtor } from "../utils/speech";
@@ -106,6 +106,9 @@ export default function SpeechToSignPanel({
     buildLocalSignPlan("Hello, thank you", phrases)
   );
   const [playSignal, setPlaySignal] = useState(0);
+  const [activeDbVideo, setActiveDbVideo] = useState(null);
+  const [loadingDbVideo, setLoadingDbVideo] = useState(false);
+  const [showAllPhrases, setShowAllPhrases] = useState(false);
 
   const matchedSequence = useMemo(
     () => matchPhraseSequence(phrases, transcript),
@@ -124,6 +127,40 @@ export default function SpeechToSignPanel({
       matchedSequence[0]
     );
   }, [matchedSequence, phrases, selectedPhraseId, transcript]);
+
+  const dbMatches = signPlan?.islrtc_matches || [];
+
+  const resolveDbVideo = useCallback(async (entry) => {
+    if (!entry?.id) return;
+    setActiveDbVideo(entry);
+    if (entry.embed_url) return;
+    setLoadingDbVideo(true);
+    try {
+      const res = await fetch(`/api/islrtc/entry/${encodeURIComponent(entry.id)}`);
+      if (!res.ok) return;
+      const data = await res.json();
+      if (data?.entry) {
+        setActiveDbVideo(data.entry);
+      }
+    } catch {
+      // Ignore transient network errors when offline.
+    } finally {
+      setLoadingDbVideo(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    const first = dbMatches[0] || null;
+    if (!first) {
+      setActiveDbVideo(null);
+      return;
+    }
+    if (stageMode === "cue" && !videoAvailable) {
+      void resolveDbVideo(first);
+    } else {
+      setActiveDbVideo(first);
+    }
+  }, [dbMatches, stageMode, videoAvailable, resolveDbVideo]);
 
   const requestSignPlan = useCallback(
     async (textToSign, { replay = true } = {}) => {
@@ -406,6 +443,8 @@ export default function SpeechToSignPanel({
 
   return (
     <section className="speech-card">
+      <div className="speech-composer">
+      <div className="section-heading"><span className="step-number">01</span><div><h2>Start a conversation</h2><p>Your voice, your words, your way.</p></div></div>
       <div className="speech-controls">
         <button
           type="button"
@@ -420,7 +459,7 @@ export default function SpeechToSignPanel({
               ? "Transcribing..."
               : recordingWhisper
               ? `Stop & Transcribe (${recordingSeconds}s)`
-              : "Record Voice (Whisper AI)"}
+              : "Record your voice"}
           </span>
         </button>
 
@@ -431,7 +470,7 @@ export default function SpeechToSignPanel({
           title="Real-time browser streaming captions (Chrome/Edge online)"
         >
           <Radio size={15} />
-          <span>{liveListening ? "Stop Live Mic" : "Live Browser Mic"}</span>
+          <span>{liveListening ? "Stop live mic" : "Live microphone"}</span>
         </button>
 
         <input
@@ -455,26 +494,29 @@ export default function SpeechToSignPanel({
         <form className="text-fallback-form" onSubmit={handleSubmitText}>
           <input
             type="text"
+            aria-label="Text for Ray to sign"
             value={manualText}
             onChange={(e) => setManualText(e.target.value)}
-            placeholder="Try: What is your name? / My name is Pranam / Please help..."
+            placeholder="Type something for Ray…"
           />
           <button
             type="submit"
             className="icon-btn active"
-            title="Sign with 3D Avatar"
+            title="Sign with Ray"
+            aria-label="Sign with Ray"
+            disabled={!manualText.trim()}
           >
             <Send size={15} />
           </button>
         </form>
       </div>
 
-      {micError && <div className="inline-warn">{micError}</div>}
+      {micError && <div className="inline-warn" role="alert">{micError}</div>}
 
       <div className="voice-transcript-box">
         <div className="card-header">
           <span>
-            Voice → Text ({activeLangConfig?.label || "English"})
+            Your message · {activeLangConfig?.label || "English"}
             {sttStatus && (
               <small className="stt-meta-tag">
                 {sttStatus.source}
@@ -510,24 +552,26 @@ export default function SpeechToSignPanel({
         </div>
         <textarea
           className="transcript-textarea"
+          aria-label="Your message to Ray"
           rows={2}
           value={transcript}
           onChange={(e) => {
             setTranscript(e.target.value);
             setSelectedPhraseId(null);
           }}
-          placeholder="Speak via Whisper AI or type any sentence — the 3D avatar signs dictionary phrases and fingerspells names!"
+          placeholder="Your words appear here. Ray is ready when you are."
         />
         {signPlan?.gloss_line && (
           <div className="gloss-plan-line">
-            <span className="gloss-badge">GLOSS PLAN</span>
+            <span className="gloss-badge">SIGN SEQUENCE</span>
             <strong>{signPlan.gloss_line}</strong>
           </div>
         )}
       </div>
 
+      <div className="phrase-heading"><h3>A little inspiration</h3><span>Tap a phrase to try it</span></div>
       <div className="phrase-chips">
-        {phrases.map((item) => (
+        {(showAllPhrases ? phrases : phrases.slice(0, 8)).map((item) => (
           <button
             key={item.id}
             type="button"
@@ -535,12 +579,17 @@ export default function SpeechToSignPanel({
               matchedPhrase?.id === item.id ? "selected" : ""
             }`}
             onClick={() => handleSelectPhrase(item)}
+            aria-pressed={matchedPhrase?.id === item.id}
           >
             {item.translations[activeLanguage] || item.translations.en}
           </button>
         ))}
       </div>
-
+      {phrases.length > 8 && <button type="button" className="text-btn phrase-expand" aria-expanded={showAllPhrases} onClick={() => setShowAllPhrases(v => !v)}>{showAllPhrases ? "Show fewer phrases −" : `Explore all ${phrases.length} phrases +`}</button>}
+      <div className="composer-tip"><Hand size={19} /><p><strong>Every gesture tells a story.</strong> Ray signs familiar phrases and fingerspells names. Use the playback controls to learn at your own pace.</p></div>
+      </div>
+      <div className="speech-stage-column">
+      <div className="section-heading"><span className="step-number">02</span><div><h2>Over to Ray</h2><p>Your personal signing companion.</p></div><span className="preview-label">3D STUDIO</span></div>
       <div className="stage-mode-bar">
         <button
           type="button"
@@ -548,7 +597,7 @@ export default function SpeechToSignPanel({
           onClick={() => setStageMode("avatar3d")}
         >
           <Box size={15} />
-          <span>3D Signing Avatar</span>
+          <span>Ray · 3D avatar</span>
         </button>
         <button
           type="button"
@@ -558,85 +607,124 @@ export default function SpeechToSignPanel({
           <Video size={15} />
           <span>Video / Cue Card</span>
         </button>
-        <button
-          type="button"
-          className={`icon-btn ${stageMode === "islrtc" ? "active" : ""}`}
-          onClick={() => setStageMode("islrtc")}
-        >
-          <BookOpen size={15} />
-          <span>ISLRTC Sign Videos</span>
-        </button>
       </div>
 
       {stageMode === "avatar3d" ? (
         <SignAvatar3D signPlan={signPlan} playSignal={playSignal} />
-      ) : stageMode === "islrtc" ? (
-        <div className="sign-stage">
-          <IslrtcDictionaryBrowser
-            compact
-            initialQuery={
-              matchedPhrase?.translations?.en ||
-              (transcript || "").trim().replace(/[?!.,]+/g, "").split(/\s+/)[0] ||
-              ""
-            }
-          />
-        </div>
       ) : (
         <div className="sign-stage">
-          {matchedPhrase ? (
-            <>
-              <div className="sign-stage-header">
-                <span className="gloss-badge">GLOSS: {matchedPhrase.gloss}</span>
-                <span className="spoken-echo">
-                  {matchedPhrase.translations[activeLanguage] ||
-                    matchedPhrase.translations.en}
-                </span>
-              </div>
+          {matchedPhrase && (
+            <div className="sign-stage-header">
+              <span className="gloss-badge">GLOSS: {matchedPhrase.gloss}</span>
+              <span className="spoken-echo">
+                {matchedPhrase.translations[activeLanguage] ||
+                  matchedPhrase.translations.en}
+              </span>
+            </div>
+          )}
 
-              {videoAvailable ? (
-                <video
-                  key={matchedPhrase.id}
-                  src={matchedPhrase.videoUrl}
-                  controls
-                  autoPlay
-                  loop
-                  muted
-                  playsInline
-                  className="sign-video-player"
-                />
-              ) : (
-                <div className="sign-cue-fallback">
-                  {matchedPhrase.imageUrl ? (
-                    <img
-                      src={matchedPhrase.imageUrl}
-                      alt={`${matchedPhrase.gloss} reference sign`}
-                      className="sign-ref-photo"
-                    />
-                  ) : (
-                    <Hand size={36} />
-                  )}
-                  <h4>{matchedPhrase.gloss}</h4>
-                  <p>{matchedPhrase.cue}</p>
-                  <small>
-                    Optional video: place a clip at{" "}
-                    <code>frontend/public{matchedPhrase.videoUrl}</code> to play
-                    prerecorded sign video automatically.
-                  </small>
-                </div>
-              )}
-            </>
+          {videoAvailable && matchedPhrase ? (
+            <video
+              key={matchedPhrase.id}
+              src={matchedPhrase.videoUrl}
+              controls
+              autoPlay
+              loop
+              muted
+              playsInline
+              className="sign-video-player"
+            />
           ) : (
             <div className="sign-cue-fallback">
-              <Video size={32} />
-              <h4>{signPlan?.gloss_line || "Speak or choose a phrase chip above"}</h4>
+              {matchedPhrase?.imageUrl ? (
+                <img
+                  src={matchedPhrase.imageUrl}
+                  alt={`${matchedPhrase.gloss} reference sign`}
+                  className="sign-ref-photo"
+                />
+              ) : !activeDbVideo?.embed_url ? (
+                <Hand size={36} />
+              ) : null}
+
+              <h4>
+                {matchedPhrase?.gloss ||
+                  signPlan?.gloss_line ||
+                  "Speak or choose a phrase chip above"}
+              </h4>
               <p>
-                Switch back to <strong>3D Signing Avatar</strong> to watch the
-                animated avatar sign &amp; fingerspell this utterance in 3D.
+                {matchedPhrase?.cue ||
+                  "Switch back to Ray to watch him sign and fingerspell your message."}
               </p>
+
+              {dbMatches.length > 0 && (
+                <div className="db-video-match-box">
+                  <div className="db-match-chips">
+                    {dbMatches.map((entry) => (
+                      <button
+                        key={entry.id}
+                        type="button"
+                        className={`chip-btn ${
+                          activeDbVideo?.id === entry.id ? "selected" : ""
+                        }`}
+                        onClick={() => void resolveDbVideo(entry)}
+                      >
+                        <Play size={11} /> {entry.en || entry.hi || entry.kn}
+                      </button>
+                    ))}
+                  </div>
+
+                  {activeDbVideo?.embed_url ? (
+                    <div className="islrtc-iframe-wrap">
+                      <iframe
+                        key={activeDbVideo.embed_url}
+                        src={activeDbVideo.embed_url}
+                        title={`ISLRTC Sign: ${activeDbVideo.en || activeDbVideo.id}`}
+                        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                        allowFullScreen
+                      />
+                    </div>
+                  ) : (
+                    activeDbVideo && (
+                      <button
+                        type="button"
+                        className="icon-btn"
+                        disabled={loadingDbVideo}
+                        onClick={() => void resolveDbVideo(activeDbVideo)}
+                      >
+                        <Play size={13} />
+                        <span>
+                          {loadingDbVideo
+                            ? "Loading official ISLRTC video..."
+                            : `Load ISLRTC Video (${activeDbVideo.en})`}
+                        </span>
+                      </button>
+                    )
+                  )}
+
+                  {activeDbVideo && (
+                    <small>
+                      ISLRTC Database ({activeDbVideo.category_en}):{" "}
+                      <strong>{activeDbVideo.en}</strong>
+                      {activeDbVideo.hi ? ` · ${activeDbVideo.hi}` : ""}
+                      {activeDbVideo.kn ? ` · ${activeDbVideo.kn}` : ""}{" "}
+                      {activeDbVideo.portal_url && (
+                        <a
+                          href={activeDbVideo.portal_url}
+                          target="_blank"
+                          rel="noreferrer"
+                        >
+                          <ExternalLink size={11} />
+                        </a>
+                      )}
+                    </small>
+                  )}
+                </div>
+              )}
             </div>
           )}
         </div>
       )}
+      </div>
     </section>
   );
 }
