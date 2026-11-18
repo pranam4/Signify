@@ -438,9 +438,15 @@ def _select_static_custom_predictions(
     pose_lms: Sequence[Any] | None,
     custom_classifier: CustomSignClassifier,
     config: RecognizerConfig,
+    *,
+    aspect_ratio: float = 1.0,
 ) -> list[Any]:
     """Run static classifier with dominant-hand fallback if an off-hand rests in frame."""
-    features = extract_sign_features(hands, pose_landmarks=pose_lms)
+    features = extract_sign_features(
+        hands,
+        pose_landmarks=pose_lms,
+        aspect_ratio=aspect_ratio,
+    )
     preds = custom_classifier.predict(
         features,
         top_k=4,
@@ -450,7 +456,7 @@ def _select_static_custom_predictions(
         return preds
 
     best_full = preds[0] if preds else None
-    has_resting_hand = any(h.height_level == "low" or h.wrist_xy[1] >= 0.78 for h in hands)
+    has_resting_hand = any(h.height_level == "low" or h.wrist_xy[1] >= 0.84 for h in hands)
     full_weak = (
         best_full is None
         or best_full.score < config.custom_classifier_threshold
@@ -465,7 +471,11 @@ def _select_static_custom_predictions(
     for hand in hands:
         if len(hands) > 1 and (hand.height_level == "low" or hand.wrist_xy[1] >= 0.84):
             continue
-        s_feats = extract_sign_features([hand], pose_landmarks=pose_lms)
+        s_feats = extract_sign_features(
+            [hand],
+            pose_landmarks=pose_lms,
+            aspect_ratio=aspect_ratio,
+        )
         s_preds = custom_classifier.predict(
             s_feats,
             top_k=4,
@@ -475,8 +485,8 @@ def _select_static_custom_predictions(
             continue
         top_s = s_preds[0]
         if (
-            top_s.score >= max(0.70, config.custom_classifier_threshold)
-            and top_s.similarity >= max(0.65, config.custom_classifier_min_similarity)
+            top_s.score >= max(0.55, config.custom_classifier_threshold)
+            and top_s.similarity >= max(0.52, config.custom_classifier_min_similarity)
             and top_s.score > best_single_score
         ):
             best_single_score = top_s.score
@@ -485,7 +495,7 @@ def _select_static_custom_predictions(
     if best_single_preds is not None and (
         best_full is None
         or full_weak
-        or best_single_score > best_full.score + 0.08
+        or (best_full.score < 0.70 and best_single_score > best_full.score + 0.14)
     ):
         return best_single_preds
     return preds
@@ -502,6 +512,7 @@ def build_prediction(
     spatial_tracker: SpatialGrammarTracker | None = None,
     custom_classifier: CustomSignClassifier | None = None,
     temporal_tracker: TemporalSignTracker | None = None,
+    aspect_ratio: float = 1.0,
 ) -> FramePrediction:
     """Extract hand + holistic observations, compute spatial grammar, and run static+dynamic recognition."""
     signing_space = None
@@ -550,7 +561,11 @@ def build_prediction(
         and config.enable_custom_classifier
     ):
         custom_preds = _select_static_custom_predictions(
-            hands, pose_lms, custom_classifier, config
+            hands,
+            pose_lms,
+            custom_classifier,
+            config,
+            aspect_ratio=aspect_ratio,
         )
         if custom_preds:
             top_custom = custom_preds[0]
@@ -571,12 +586,12 @@ def build_prediction(
             ]
             primary_hand.top_gestures = merged_cands[:4]
 
-            margin_ok = (top_custom.score - second_score) >= 0.08 or top_custom.similarity >= 0.72
+            margin_ok = (top_custom.score - second_score) >= 0.06 or top_custom.similarity >= 0.65
             if (
                 top_custom.score >= config.custom_classifier_threshold
                 and top_custom.similarity >= config.custom_classifier_min_similarity
                 and margin_ok
-                and (stock_label == "None" or top_custom.score >= stock_score * 0.85)
+                and (stock_label == "None" or top_custom.score >= stock_score * 0.72)
             ):
                 primary_hand.gesture = top_custom.label
                 primary_hand.gesture_score = top_custom.score
@@ -644,6 +659,7 @@ def build_prediction(
             face_landmarks=face_lms,
             head_yaw_ratio=head_yaw_r,
             head_pitch_ratio=head_pitch_r,
+            aspect_ratio=aspect_ratio,
         )
         dyn_trigger, dyn_cands, motion_speed = temporal_tracker.update(timestamp_ms, kframe)
 
@@ -682,7 +698,7 @@ def build_prediction(
             )
 
     # Suppress mid-motion blur frames from locking spurious static classes while hands are sweeping.
-    is_brisk_motion = motion_speed >= 1.15
+    is_brisk_motion = motion_speed >= 2.4
     if is_brisk_motion:
         stabilizer.notify_motion_boundary()
         motion_state = "moving"
@@ -786,6 +802,7 @@ class SignGestureRecognizer:
             else None
         )
         self._last_timestamp_ms = 0
+        self._live_aspect_ratio = 1.0
         self._closed = False
         self._holistic_lock = threading.Lock()
         self._latest_holistic: tuple[int, HolisticLandmarkerResult] | None = None
@@ -830,6 +847,11 @@ class SignGestureRecognizer:
                             h_ts, h_val = self._latest_holistic
                             if abs(timestamp_ms - h_ts) <= 150:
                                 holistic_res = h_val
+                ar_live = (
+                    float(_output_image.width) / float(max(1, _output_image.height))
+                    if getattr(_output_image, "width", 0) and getattr(_output_image, "height", 0)
+                    else self._live_aspect_ratio
+                )
                 pred = build_prediction(
                     result,
                     timestamp_ms,
@@ -839,6 +861,7 @@ class SignGestureRecognizer:
                     spatial_tracker=self._spatial_tracker,
                     custom_classifier=self._custom_classifier,
                     temporal_tracker=self._temporal_tracker,
+                    aspect_ratio=ar_live,
                 )
                 if self._result_callback is not None:
                     self._result_callback(pred)
@@ -928,6 +951,8 @@ class SignGestureRecognizer:
                 "Use process_async_rgb() when running_mode is 'LIVE_STREAM'."
             )
 
+        h, w = rgb_frame.shape[:2]
+        aspect_ratio = float(w) / float(max(1, h))
         mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb_frame)
         if self._mode_key == "IMAGE":
             ts = int(time.monotonic() * 1000) if timestamp_ms is None else int(timestamp_ms)
@@ -948,6 +973,7 @@ class SignGestureRecognizer:
                 holistic_result=holistic_result,
                 spatial_tracker=self._spatial_tracker,
                 custom_classifier=self._custom_classifier,
+                aspect_ratio=aspect_ratio,
             )
 
         ts = self._next_timestamp_ms(timestamp_ms)
@@ -971,6 +997,7 @@ class SignGestureRecognizer:
             spatial_tracker=self._spatial_tracker,
             custom_classifier=self._custom_classifier,
             temporal_tracker=self._temporal_tracker,
+            aspect_ratio=aspect_ratio,
         )
 
     def process_async_rgb(
@@ -983,6 +1010,8 @@ class SignGestureRecognizer:
             raise ValueError(
                 "process_async_rgb() requires running_mode='LIVE_STREAM'."
             )
+        h, w = rgb_frame.shape[:2]
+        self._live_aspect_ratio = float(w) / float(max(1, h))
         ts = self._next_timestamp_ms(timestamp_ms)
         mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb_frame)
         self._recognizer.recognize_async(mp_image, ts)

@@ -65,16 +65,16 @@ class RecognizerConfig:
     holistic_model_url: str = DEFAULT_HOLISTIC_MODEL_URL
     running_mode: str = "VIDEO"
     num_hands: int = 2
-    min_hand_detection_confidence: float = 0.5
-    min_hand_presence_confidence: float = 0.5
-    min_tracking_confidence: float = 0.5
+    min_hand_detection_confidence: float = 0.30
+    min_hand_presence_confidence: float = 0.30
+    min_tracking_confidence: float = 0.30
     min_face_detection_confidence: float = 0.5
     min_face_suppression_threshold: float = 0.3
     min_face_presence_confidence: float = 0.5
-    min_pose_detection_confidence: float = 0.5
+    min_pose_detection_confidence: float = 0.35
     min_pose_suppression_threshold: float = 0.3
-    min_pose_presence_confidence: float = 0.5
-    min_hand_landmarks_confidence: float = 0.5
+    min_pose_presence_confidence: float = 0.35
+    min_hand_landmarks_confidence: float = 0.30
     output_face_blendshapes: bool = True
     output_pose_segmentation_masks: bool = False
     display_names_locale: str | None = None
@@ -86,10 +86,10 @@ class RecognizerConfig:
     custom_max_results: int | None = None
     custom_category_allowlist: list[str] | None = None
     custom_category_denylist: list[str] | None = None
-    stability_window: int = 6
-    stability_min_votes: int = 4
-    stability_min_score: float = 0.55
-    cooldown_seconds: float = 1.5
+    stability_window: int = 5
+    stability_min_votes: int = 3
+    stability_min_score: float = 0.50
+    cooldown_seconds: float = 1.0
     left_zone_max_x: float = 0.35
     right_zone_min_x: float = 0.65
     invert_handedness: bool = False
@@ -97,14 +97,14 @@ class RecognizerConfig:
     custom_classifier_path: Path = field(
         default_factory=lambda: DEFAULT_CUSTOM_CLASSIFIER_PATH
     )
-    custom_classifier_threshold: float = 0.62
-    custom_classifier_min_similarity: float = 0.52
+    custom_classifier_threshold: float = 0.52
+    custom_classifier_min_similarity: float = 0.46
     enable_dynamic_recognizer: bool = True
     dynamic_classifier_path: Path = field(
         default_factory=lambda: DEFAULT_DYNAMIC_CLASSIFIER_PATH
     )
-    dynamic_classifier_threshold: float = 0.60
-    dynamic_classifier_min_similarity: float = 0.48
+    dynamic_classifier_threshold: float = 0.58
+    dynamic_classifier_min_similarity: float = 0.44
 
 
 def config_from_env(

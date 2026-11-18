@@ -125,35 +125,43 @@ def extract_kinematic_frame(
     face_landmarks: Sequence[Any] | None = None,
     head_yaw_ratio: float = 0.0,
     head_pitch_ratio: float = 0.0,
+    aspect_ratio: float = 1.0,
 ) -> np.ndarray:
     """Extract a 46-dim torso+face-anchored kinematic frame descriptor."""
-    left_arr, right_arr = _assign_hand_slots(hands)
+    ar = max(0.2, min(5.0, float(aspect_ratio)))
+    left_arr, right_arr = _assign_hand_slots(
+        hands,
+        pose_landmarks=pose_landmarks,
+        aspect_ratio=ar,
+    )
     has_left = left_arr is not None
     has_right = right_arr is not None
 
-    cx, cy, sh_width = 0.5, 0.52, 0.34
+    cx, cy, sh_width = 0.5, 0.52, 0.36
     pose_valid = 0.0
     nose_x, nose_y = 0.5, 0.30
 
     if pose_landmarks and len(pose_landmarks) > _POSE_RIGHT_SHOULDER:
-        ls_x, ls_y, ls_v = _pt_xyv(pose_landmarks[_POSE_LEFT_SHOULDER])
-        rs_x, rs_y, rs_v = _pt_xyv(pose_landmarks[_POSE_RIGHT_SHOULDER])
+        ls_x_raw, ls_y, ls_v = _pt_xyv(pose_landmarks[_POSE_LEFT_SHOULDER])
+        rs_x_raw, rs_y, rs_v = _pt_xyv(pose_landmarks[_POSE_RIGHT_SHOULDER])
+        ls_x = 0.5 + (ls_x_raw - 0.5) * ar
+        rs_x = 0.5 + (rs_x_raw - 0.5) * ar
         sw = abs(ls_x - rs_x)
-        if ls_v >= 0.35 and rs_v >= 0.35 and 0.08 <= sw <= 0.90:
+        if ls_v >= 0.35 and rs_v >= 0.35 and 0.08 <= sw <= 1.25 * ar:
             cx = 0.5 * (ls_x + rs_x)
             cy = 0.5 * (ls_y + rs_y)
             sh_width = max(0.08, sw)
             pose_valid = 1.0
-            nx, ny, nv = _pt_xyv(pose_landmarks[_POSE_NOSE])
+            nx_raw, ny, nv = _pt_xyv(pose_landmarks[_POSE_NOSE])
             if nv >= 0.35:
-                nose_x, nose_y = nx, ny
+                nose_x, nose_y = 0.5 + (nx_raw - 0.5) * ar, ny
             else:
                 nose_x, nose_y = cx, cy - 0.55 * sh_width
 
     if face_landmarks and len(face_landmarks) > _FACE_NOSE_TIP:
-        fn_x, fn_y, _ = _pt_xyv(face_landmarks[_FACE_NOSE_TIP])
-        if 0.01 <= fn_x <= 0.99 and 0.01 <= fn_y <= 0.99:
-            nose_x, nose_y = fn_x, fn_y
+        fn_x_raw, fn_y, _ = _pt_xyv(face_landmarks[_FACE_NOSE_TIP])
+        if 0.01 <= fn_x_raw <= 0.99 and 0.01 <= fn_y <= 0.99:
+            nose_x, nose_y = 0.5 + (fn_x_raw - 0.5) * ar, fn_y
 
     left_blk, lwx, lwy = _hand_kinematics_block(
         left_arr, cx, cy, nose_x, nose_y, sh_width
@@ -1011,7 +1019,7 @@ class TemporalSignTracker:
         *,
         max_buffer_ms: int = 1500,
         windows_ms: tuple[int, ...] = (480, 780, 1120),
-        min_path_shoulders: float = 0.18,
+        min_path_shoulders: float = 0.26,
         score_threshold: float = 0.60,
         min_similarity: float = 0.48,
         cooldown_seconds: float = 1.4,

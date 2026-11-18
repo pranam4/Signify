@@ -34,10 +34,16 @@ class GestureStabilizer:
         self._history: deque[tuple[str | None, float]] = deque(maxlen=window_size)
         self._last_locked_label: str | None = None
         self._last_locked_at: float = 0.0
+        self._miss_streak: int = 0
+        self._alt_label: str | None = None
+        self._alt_streak: int = 0
 
     def reset(self) -> None:
         """Clear buffered frame history."""
         self._history.clear()
+        self._miss_streak = 0
+        self._alt_label = None
+        self._alt_streak = 0
 
     def notify_motion_boundary(self) -> None:
         """Trim stale transition votes when hands shift briskly toward a new sign."""
@@ -45,6 +51,8 @@ class GestureStabilizer:
             newest = self._history[-1]
             self._history.clear()
             self._history.append(newest)
+        self._alt_label = None
+        self._alt_streak = 0
 
     def mark_external_lock(self, label: str, now: float | None = None) -> None:
         """Record a dynamic-motion lock so static voting stays debounced cleanly."""
@@ -52,6 +60,9 @@ class GestureStabilizer:
         self._last_locked_label = label
         self._last_locked_at = ts
         self._history.clear()
+        self._miss_streak = 0
+        self._alt_label = None
+        self._alt_streak = 0
 
     def is_in_cooldown(self, label: str, now: float | None = None) -> bool:
         """Check whether `label` was locked within cooldown_seconds."""
@@ -75,6 +86,40 @@ class GestureStabilizer:
             if label and label != "None" and score >= self.min_score
             else None
         )
+
+        if valid_label is None:
+            self._alt_label = None
+            self._alt_streak = 0
+            self._miss_streak += 1
+            if self._miss_streak >= 2:
+                self._history.clear()
+                return StabilityUpdate(
+                    candidate_label=None,
+                    progress=0.0,
+                    locked_label=None,
+                    locked_score=0.0,
+                )
+        else:
+            self._miss_streak = 0
+            existing = Counter(item[0] for item in self._history if item[0] is not None)
+            prev_top = existing.most_common(1)[0][0] if existing else None
+            if prev_top is not None and valid_label != prev_top:
+                if valid_label == self._alt_label:
+                    self._alt_streak += 1
+                else:
+                    self._alt_label = valid_label
+                    self._alt_streak = 1
+                if self._alt_streak >= 2:
+                    # Flush stale votes from the previous sign once two consecutive frames switch.
+                    kept = [item for item in self._history if item[0] == valid_label]
+                    self._history.clear()
+                    self._history.extend(kept)
+                    self._alt_label = None
+                    self._alt_streak = 0
+            else:
+                self._alt_label = None
+                self._alt_streak = 0
+
         self._history.append((valid_label, score if valid_label else 0.0))
 
         counts = Counter(item[0] for item in self._history if item[0] is not None)

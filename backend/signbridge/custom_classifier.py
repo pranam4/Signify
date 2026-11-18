@@ -76,11 +76,18 @@ def _pt_xyz(pt: Any) -> tuple[float, float, float]:
     )
 
 
-def _hand_landmarks_array(hand: Any) -> np.ndarray | None:
+def _hand_landmarks_array(
+    hand: Any,
+    *,
+    aspect_ratio: float = 1.0,
+) -> np.ndarray | None:
     lms = hand.get("landmarks") if isinstance(hand, dict) else getattr(hand, "landmarks", None)
     if not lms or len(lms) < 21:
         return None
     coords = np.asarray([_pt_xyz(p) for p in lms[:21]], dtype=np.float32)
+    if aspect_ratio != 1.0:
+        coords[:, 0] = 0.5 + (coords[:, 0] - 0.5) * aspect_ratio
+        coords[:, 2] *= aspect_ratio
     return coords
 
 
@@ -91,11 +98,14 @@ def _hand_handedness(hand: Any) -> str:
 
 def _assign_hand_slots(
     hands: Sequence[Any],
+    *,
+    pose_landmarks: Sequence[Any] | None = None,
+    aspect_ratio: float = 1.0,
 ) -> tuple[np.ndarray | None, np.ndarray | None]:
     """Assign up to two detected hands into deterministic (Left, Right) slots."""
     parsed: list[tuple[str, np.ndarray]] = []
     for hand in hands:
-        arr = _hand_landmarks_array(hand)
+        arr = _hand_landmarks_array(hand, aspect_ratio=aspect_ratio)
         if arr is not None:
             parsed.append((_hand_handedness(hand), arr))
     if not parsed:
@@ -105,31 +115,25 @@ def _assign_hand_slots(
         side, arr = parsed[0]
         return (arr, None) if side == "Left" else (None, arr)
 
-    left_arr: np.ndarray | None = None
-    right_arr: np.ndarray | None = None
-    unplaced: list[np.ndarray] = []
+    pair = parsed[:2]
+    sides = {side for side, _ in pair}
+    if sides == {"Left", "Right"}:
+        left_arr = pair[0][1] if pair[0][0] == "Left" else pair[1][1]
+        right_arr = pair[0][1] if pair[0][0] == "Right" else pair[1][1]
+        return left_arr, right_arr
 
-    for side, arr in parsed[:2]:
-        if side == "Left" and left_arr is None:
-            left_arr = arr
-        elif side == "Right" and right_arr is None:
-            right_arr = arr
-        else:
-            unplaced.append(arr)
-
-    for arr in unplaced:
-        if left_arr is None and right_arr is not None:
-            left_arr = arr
-        elif right_arr is None and left_arr is not None:
-            right_arr = arr
-        else:
-            # Both unassigned: order left-to-right in frame coordinates.
-            unplaced_sorted = sorted([arr] + [a for a in unplaced if a is not arr], key=lambda a: float(a[0, 0]))
-            left_arr = unplaced_sorted[0]
-            right_arr = unplaced_sorted[1] if len(unplaced_sorted) > 1 else None
-            break
-
-    return left_arr, right_arr
+    # Duplicate handedness ("Left"/"Left", "Right"/"Right") or "Unknown":
+    # resolve slots anatomically by wrist x rather than arbitrary detection order.
+    by_x = sorted((a for _, a in pair), key=lambda a: float(a[0, 0]))
+    smaller_x, larger_x = by_x[0], by_x[1]
+    left_is_smaller_x = False
+    if pose_landmarks and len(pose_landmarks) > _POSE_RIGHT_SHOULDER:
+        ls_x, _, _ = _pt_xyz(pose_landmarks[_POSE_LEFT_SHOULDER])
+        rs_x, _, _ = _pt_xyz(pose_landmarks[_POSE_RIGHT_SHOULDER])
+        left_is_smaller_x = ls_x < rs_x
+    if left_is_smaller_x:
+        return smaller_x, larger_x
+    return larger_x, smaller_x
 
 
 def _normalize_single_hand(
@@ -171,9 +175,15 @@ def _normalize_single_hand(
 def extract_sign_features(
     hands: Sequence[Any],
     pose_landmarks: Sequence[Any] | None = None,
+    *,
+    aspect_ratio: float = 1.0,
 ) -> np.ndarray:
     """Build a 155-dim invariant feature vector from MediaPipe hands + optional pose."""
-    left_arr, right_arr = _assign_hand_slots(hands)
+    left_arr, right_arr = _assign_hand_slots(
+        hands,
+        pose_landmarks=pose_landmarks,
+        aspect_ratio=aspect_ratio,
+    )
     left_flat, left_scale, left_ext, left_pinch = _normalize_single_hand(left_arr)
     right_flat, right_scale, right_ext, right_pinch = _normalize_single_hand(right_arr)
 
@@ -198,6 +208,9 @@ def extract_sign_features(
     if pose_landmarks and len(pose_landmarks) > _POSE_RIGHT_SHOULDER:
         ls_x, ls_y, _ = _pt_xyz(pose_landmarks[_POSE_LEFT_SHOULDER])
         rs_x, rs_y, _ = _pt_xyz(pose_landmarks[_POSE_RIGHT_SHOULDER])
+        if aspect_ratio != 1.0:
+            ls_x = 0.5 + (ls_x - 0.5) * aspect_ratio
+            rs_x = 0.5 + (rs_x - 0.5) * aspect_ratio
         shoulder_width = math.hypot(ls_x - rs_x, ls_y - rs_y)
         if shoulder_width > 1e-4:
             cx = 0.5 * (ls_x + rs_x)
@@ -739,12 +752,7 @@ class CustomSignClassifier:
                 if len(self._labels) == 1:
                     probs = torch.tensor([float(max(0.0, sims[0].item()))])
                 else:
-                    mlp_probs = torch.softmax(logits, dim=0)
-                    if len(self._labels) >= 6:
-                        proto_probs = torch.softmax(sims * 9.0, dim=0)
-                        probs = 0.78 * mlp_probs + 0.22 * proto_probs
-                    else:
-                        probs = mlp_probs
+                    probs = torch.softmax(logits, dim=0)
 
             k = min(max(1, top_k), len(self._labels))
             top_probs, top_indices = torch.topk(probs, k=k)

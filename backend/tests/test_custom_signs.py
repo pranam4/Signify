@@ -478,3 +478,113 @@ def test_dataset_sequences_api_crud_and_train(tmp_path: Path, monkeypatch: pytes
         deleted = client.delete(f"/api/dataset/sequences/{seq_id}")
         assert deleted.status_code == 200
         assert deleted.json()["deleted"] is True
+
+
+def test_aspect_ratio_invariant_feature_and_kinematic_extraction() -> None:
+    from signbridge.avatar_dataset import _fk_hand_landmarks, _fk_pose_landmarks
+    from signbridge.dynamic_recognizer import extract_kinematic_frame
+
+    pose_sq = _fk_pose_landmarks(0.0)
+    joints = {
+        "thumb": [0.1, 0.0, 0.2, 0.15],
+        "index": [0.05, 0.0, 0.0, 0.0],
+        "middle": [0.05, 0.0, 0.0, 0.0],
+        "ring": [1.3, 1.2, 0.9, 0.0],
+        "pinky": [1.3, 1.2, 0.9, 0.0],
+    }
+    lms_sq = _fk_hand_landmarks(
+        [-0.25, 0.25, 0.18],
+        [0.0, 0.0, 1.0],
+        [0.0, -1.0, 0.0],
+        joints,
+        -1,
+    )
+    ar = 16.0 / 9.0
+
+    def _squish_lms(lms: list[SimpleNamespace]) -> list[SimpleNamespace]:
+        return [
+            SimpleNamespace(
+                x=0.5 + (p.x - 0.5) / ar,
+                y=p.y,
+                z=p.z / ar,
+                visibility=getattr(p, "visibility", 1.0),
+            )
+            for p in lms
+        ]
+
+    hand_sq = SimpleNamespace(handedness="Right", landmarks=lms_sq)
+    hand_wide = SimpleNamespace(handedness="Right", landmarks=_squish_lms(lms_sq))
+    pose_wide = _squish_lms(pose_sq)
+
+    feat_sq = extract_sign_features([hand_sq], pose_landmarks=pose_sq, aspect_ratio=1.0)
+    feat_wide = extract_sign_features([hand_wide], pose_landmarks=pose_wide, aspect_ratio=ar)
+    assert np.allclose(feat_sq, feat_wide, atol=1e-4)
+
+    kf_sq = extract_kinematic_frame([hand_sq], pose_landmarks=pose_sq, aspect_ratio=1.0)
+    kf_wide = extract_kinematic_frame([hand_wide], pose_landmarks=pose_wide, aspect_ratio=ar)
+    assert np.allclose(kf_sq, kf_wide, atol=1e-4)
+
+
+def test_real_human_goodbye_in_640x480_video_and_no_stale_output() -> None:
+    from signbridge.recognizer import SignGestureRecognizer
+
+    ref_goodbye = DEFAULT_DATASET_DIR / "images" / "Goodbye" / "img2_goodbye.jpg"
+    if not ref_goodbye.is_file() or not DEFAULT_CUSTOM_CLASSIFIER_PATH.is_file():
+        pytest.skip("Trained custom model or Goodbye photo not found.")
+
+    img = cv2.imread(str(ref_goodbye))
+    assert img is not None
+    # Simulate placing a tall portrait crop in a 640x480 webcam frame.
+    scene = np.full((480, 640, 3), 235, dtype=np.uint8)
+    h, w = img.shape[:2]
+    scale = 360.0 / float(h)
+    nw, nh = int(w * scale), 360
+    resized = cv2.resize(img, (nw, nh))
+    x0 = (640 - nw) // 2
+    y0 = (480 - nh) // 2
+    scene[y0 : y0 + nh, x0 : x0 + nw] = resized
+
+    blank = np.full((480, 640, 3), 20, dtype=np.uint8)
+    locked = None
+    with SignGestureRecognizer(RecognizerConfig(running_mode="VIDEO")) as rec:
+        for i in range(6):
+            pred = rec.process_bgr(scene, timestamp_ms=100 + i * 100)
+            if pred.locked_label:
+                locked = pred.locked_label
+        assert locked == "Goodbye"
+
+        # Two blank frames must immediately flush stale candidate votes.
+        rec.process_bgr(blank, timestamp_ms=800)
+        after_blank = rec.process_bgr(blank, timestamp_ms=900)
+        assert after_blank.hands == []
+        assert after_blank.candidate_label is None
+        assert after_blank.stability_progress == 0.0
+
+
+def test_duplicate_handedness_slot_resolution() -> None:
+    from signbridge.avatar_dataset import _fk_hand_landmarks, _fk_pose_landmarks
+
+    pose = _fk_pose_landmarks(0.0)
+    joints = {
+        "thumb": [0.1, 0.0, 0.2, 0.15],
+        "index": [0.05, 0.0, 0.0, 0.0],
+        "middle": [0.05, 0.0, 0.0, 0.0],
+        "ring": [1.3, 1.2, 0.9, 0.0],
+        "pinky": [1.3, 1.2, 0.9, 0.0],
+    }
+    h_right_side = SimpleNamespace(
+        handedness="Right",
+        landmarks=_fk_hand_landmarks([-0.22, 0.28, 0.18], [0, 0, 1], [0, -1, 0], joints, -1),
+    )
+    h_left_side = SimpleNamespace(
+        handedness="Left",
+        landmarks=_fk_hand_landmarks([0.22, 0.28, 0.18], [0, 0, 1], [0, -1, 0], joints, 1),
+    )
+    f_distinct = extract_sign_features([h_left_side, h_right_side], pose_landmarks=pose)
+
+    # Even if MediaPipe reports both hands as "Right" in reversed list order,
+    # anatomical wrist x resolves Left vs Right into identical slots.
+    h_dup_r1 = SimpleNamespace(handedness="Right", landmarks=h_right_side.landmarks)
+    h_dup_r2 = SimpleNamespace(handedness="Right", landmarks=h_left_side.landmarks)
+    f_dup = extract_sign_features([h_dup_r1, h_dup_r2], pose_landmarks=pose)
+    assert np.allclose(f_distinct, f_dup, atol=1e-5)

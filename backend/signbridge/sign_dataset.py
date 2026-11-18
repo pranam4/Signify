@@ -32,6 +32,27 @@ _SINGLE_HAND_IMAGE2_LABELS: set[str] = {
     "Yes",
     "You",
 }
+_TWO_HAND_PREFERRED_LABELS: set[str] = {
+    "Book",
+    "Change",
+    "Cook",
+    "Cracker",
+    "Finish",
+    "Friend",
+    "Help",
+    "Home",
+    "Hug",
+    "Meet",
+    "More",
+    "Play",
+    "Same",
+    "Stop",
+    "Touch",
+    "Wait",
+    "Welcome",
+    "With",
+    "Work",
+}
 
 
 def _validated_pose_landmarks(
@@ -175,20 +196,26 @@ class SignDatasetStore:
         )
         return SignGestureRecognizer(cfg)
 
-    def _extract_prediction(
+    def _extract_prediction_with_aspect(
         self,
         bgr: np.ndarray,
         recognizer: SignGestureRecognizer | None = None,
-    ):
+        *,
+        prefer_multi_hand: bool = False,
+    ) -> tuple[Any, float]:
         own_rec = recognizer is None
         rec = recognizer or self._build_extractor_recognizer()
         try:
-            pred = rec.process_bgr(bgr)
-            if pred.hands:
-                return pred
-
-            # Retry with upscaling + replicate padding for tight/low-contrast crops.
             h, w = bgr.shape[:2]
+            raw_ar = float(w) / float(max(1, h))
+            pred = rec.process_bgr(bgr)
+            if pred.hands and (not prefer_multi_hand or len(pred.hands) >= 2):
+                return pred, raw_ar
+
+            best_pred = pred
+            best_ar = raw_ar
+
+            # Retry with upscaling + replicate padding for tight/low-contrast or 2-hand crops.
             for scale in (2, 3):
                 resized = cv2.resize(
                     bgr,
@@ -198,13 +225,28 @@ class SignDatasetStore:
                 padded = cv2.copyMakeBorder(
                     resized, 40, 40, 40, 40, cv2.BORDER_REPLICATE
                 )
+                ph, pw = padded.shape[:2]
+                pad_ar = float(pw) / float(max(1, ph))
                 retry_pred = rec.process_bgr(padded)
-                if retry_pred.hands:
-                    return retry_pred
-            return pred
+                if len(retry_pred.hands) > len(best_pred.hands):
+                    best_pred = retry_pred
+                    best_ar = pad_ar
+                if retry_pred.hands and (
+                    not prefer_multi_hand or len(retry_pred.hands) >= 2
+                ):
+                    return retry_pred, pad_ar
+            return best_pred, best_ar
         finally:
             if own_rec:
                 rec.close()
+
+    def _extract_prediction(
+        self,
+        bgr: np.ndarray,
+        recognizer: SignGestureRecognizer | None = None,
+    ):
+        pred, _ = self._extract_prediction_with_aspect(bgr, recognizer=recognizer)
+        return pred
 
     @staticmethod
     def _public_sample(entry: dict[str, Any]) -> dict[str, Any]:
@@ -374,17 +416,26 @@ class SignDatasetStore:
         if bgr is None or bgr.size == 0:
             raise ValueError("Input image is empty.")
 
-        pred = self._extract_prediction(bgr, recognizer=recognizer)
+        clean_label = normalize_sign_label(label)
+        prefer_two = clean_label in _TWO_HAND_PREFERRED_LABELS
+        pred, used_ar = self._extract_prediction_with_aspect(
+            bgr,
+            recognizer=recognizer,
+            prefer_multi_hand=prefer_two,
+        )
         if not pred.hands:
             raise ValueError(
                 "No hand landmarks detected in frame. Center your hand(s) in good lighting and try again."
             )
 
-        clean_label = normalize_sign_label(label)
         clean_hands = _filter_static_hands(pred.hands, label=clean_label, source=source)
         raw_pose = pred.holistic.get("pose_landmarks") if pred.holistic else None
         pose_lms = _validated_pose_landmarks(raw_pose, source=source)
-        features = extract_sign_features(clean_hands, pose_landmarks=pose_lms)
+        features = extract_sign_features(
+            clean_hands,
+            pose_landmarks=pose_lms,
+            aspect_ratio=used_ar,
+        )
         return self._store_sample_record(
             bgr,
             clean_label,
@@ -691,7 +742,11 @@ class SignDatasetStore:
                     continue
                 if idx == len(frame_bytes_list) // 2:
                     mid_bgr = bgr
-                pred = self._extract_prediction(bgr, recognizer=rec)
+                pred, used_ar = self._extract_prediction_with_aspect(
+                    bgr,
+                    recognizer=rec,
+                    prefer_multi_hand=clean_label in _TWO_HAND_PREFERRED_LABELS,
+                )
                 if not pred.hands:
                     continue
                 pose_lms = pred.holistic.get("pose_landmarks") if pred.holistic else None
@@ -700,6 +755,7 @@ class SignDatasetStore:
                     pred.hands,
                     pose_landmarks=pose_lms,
                     face_landmarks=face_lms,
+                    aspect_ratio=used_ar,
                 )
                 ts = (
                     int(timestamps_ms[idx])
@@ -831,9 +887,20 @@ class SignDatasetStore:
                 if bgr is None:
                     continue
 
-                pred = self._extract_prediction(bgr, recognizer=rec_hi)
-                if not pred.hands:
-                    pred = self._extract_prediction(bgr, recognizer=rec_lo)
+                prefer_two = entry["label"] in _TWO_HAND_PREFERRED_LABELS
+                pred, used_ar = self._extract_prediction_with_aspect(
+                    bgr,
+                    recognizer=rec_hi,
+                    prefer_multi_hand=prefer_two,
+                )
+                if not pred.hands or (prefer_two and len(pred.hands) < 2):
+                    pred_lo, ar_lo = self._extract_prediction_with_aspect(
+                        bgr,
+                        recognizer=rec_lo,
+                        prefer_multi_hand=prefer_two,
+                    )
+                    if len(pred_lo.hands) > len(pred.hands):
+                        pred, used_ar = pred_lo, ar_lo
 
                 if not pred.hands:
                     # Preserve existing features if re-extraction missed, but strip hallucinated pose.
@@ -853,7 +920,11 @@ class SignDatasetStore:
                 )
                 raw_pose = pred.holistic.get("pose_landmarks") if pred.holistic else None
                 pose_lms = _validated_pose_landmarks(raw_pose, source=src)
-                feats = extract_sign_features(clean_hands, pose_landmarks=pose_lms)
+                feats = extract_sign_features(
+                    clean_hands,
+                    pose_landmarks=pose_lms,
+                    aspect_ratio=used_ar,
+                )
                 entry["features"] = [round(float(x), 6) for x in feats.tolist()]
                 entry["num_hands"] = len(clean_hands)
                 entry["has_pose"] = bool(pose_lms)

@@ -344,3 +344,34 @@ def test_realtime_dynamic_moving_sign_streaming_and_idle_rejection(tmp_path) -> 
             false_fired = trig.label
             break
     assert false_fired is None
+
+
+def test_stabilizer_clears_on_missing_hands_and_fast_switches() -> None:
+    stab = GestureStabilizer(
+        window_size=5,
+        min_votes=3,
+        min_score=0.50,
+        cooldown_seconds=0.8,
+    )
+    # 3 votes lock "Book"
+    for i in range(2):
+        st = stab.update("Book", 0.85, now=1.0 + i * 0.1)
+        assert st.locked_label is None
+    st = stab.update("Book", 0.85, now=1.2)
+    assert st.locked_label == "Book"
+
+    # Two consecutive missing/None frames immediately clear stale candidate history.
+    st_miss1 = stab.update(None, 0.0, now=1.3)
+    assert st_miss1.candidate_label is None or st_miss1.candidate_label == "Book"
+    st_miss2 = stab.update("None", 0.0, now=1.4)
+    assert st_miss2.candidate_label is None
+    assert st_miss2.progress == 0.0
+
+    # Switching signs without dropping hands flushes previous sign votes after 2 frames.
+    stab.update("Book", 0.82, now=2.5)
+    stab.update("Book", 0.82, now=2.6)
+    stab.update("Please", 0.84, now=2.7)
+    st_switch = stab.update("Please", 0.84, now=2.8)
+    assert st_switch.candidate_label == "Please"
+    st_lock = stab.update("Please", 0.84, now=2.9)
+    assert st_lock.locked_label == "Please"

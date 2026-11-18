@@ -285,6 +285,9 @@ export default function CameraCaptureStage({
       }
       streamRef.current = null;
     }
+    if (onSpatialUpdateRef.current) {
+      onSpatialUpdateRef.current(null, null, null);
+    }
   }, []);
 
   const startCamera = useCallback(async () => {
@@ -483,6 +486,7 @@ export default function CameraCaptureStage({
                 recognitionSource: payload.recognition_source || "none",
                 motionState: payload.motion_state || "idle",
                 progress: payload.stability_progress || 0,
+                handCount: (payload.hands || []).length,
               }
             );
           }

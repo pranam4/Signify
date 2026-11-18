@@ -1,5 +1,8 @@
 /* Shared visual system for the React translation studio. */
 .intro-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.promo-top-btn { display: inline-flex; align-items: center; gap: 6px; padding: 8px 13px; border-radius: 999px; border: 1px solid #2c7a62; background: #132e2c; color: #e2f5de; font-size: 11px; font-weight: 600; cursor: pointer; white-space: nowrap; box-shadow: 0 2px 8px #132e2c1a; }
+.promo-top-btn:hover { background: #1c443e; border-color: #3f9b7c; }
+.promo-top-btn svg { color: #b7dfb0; }
 .promo-dialog { padding: 0; width: min(1000px, 94vw); max-height: 92vh; overflow: auto; border: 1px solid #446455; border-radius: 18px; background: #132e2c; color: #edf4e7; box-shadow: 0 25px 100px #0006; }
 .promo-dialog::backdrop { background: #071a1bdd; backdrop-filter: blur(8px); }
 .promo-dialog-header { display: flex; align-items: center; justify-content: space-between; padding: 20px 24px; }
@@ -266,6 +269,7 @@ svg { flex-shrink: 0; }
   .top-controls .select-pill { padding: 7px 3px; gap: 4px; }
   .top-controls .select-pill select { max-width: 112px; font-size: 10px; }
   .top-controls .icon-btn { font-size: 10px; padding: 7px; }
+  .promo-top-btn { padding: 6px 10px; font-size: 10px; }
   .workspace-intro { align-items: flex-start; gap: 10px; flex-wrap: wrap; padding: 25px 0; }
   .workspace-intro h1 { font-size: 30px; }
   .workspace-intro p { font-size: 11px; }

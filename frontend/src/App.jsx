@@ -74,6 +74,7 @@ export default function App() {
   const [copiedTranscript, setCopiedTranscript] = useState(false);
   const transcriptUndoRef = useRef([]);
   const lastSpatialUpdateRef = useRef(0);
+  const lastHandSeenAtRef = useRef(0);
 
   const activeLangConfig = useMemo(
     () =>
@@ -152,11 +153,27 @@ export default function App() {
 
   const handleSpatialUpdate = useCallback((sg, _holistic, liveInfo) => {
     const now = performance.now();
+    const handCount = liveInfo?.handCount ?? 0;
+    const hasActiveSignal = handCount > 0 || Boolean(liveInfo?.candidateLabel);
+
+    if (hasActiveSignal) {
+      lastHandSeenAtRef.current = now;
+    } else {
+      setLivePreview(null);
+      if (
+        lastHandSeenAtRef.current > 0 &&
+        now - lastHandSeenAtRef.current >= 1800
+      ) {
+        setLatestOutput(null);
+        lastHandSeenAtRef.current = 0;
+      }
+    }
+
     if (now - lastSpatialUpdateRef.current < 120) return;
     lastSpatialUpdateRef.current = now;
     setSpatialGrammar(sg);
     if (liveInfo !== undefined) {
-      setLivePreview(liveInfo);
+      setLivePreview(hasActiveSignal ? liveInfo : null);
     }
   }, []);
 
@@ -316,9 +333,10 @@ export default function App() {
     ]
   );
 
+  const isAwaitingLiveSign = !latestOutput && !livePreview?.candidateLabel;
   const displayedLatestText = latestOutput
     ? latestOutput.phrases?.[activeLanguage] || latestOutput.text
-    : "Show a sign in front of the camera";
+    : livePreview?.candidateLabel || "Show a sign in front of the camera";
 
   const space = spatialGrammar?.signing_space;
   const nmm = spatialGrammar?.non_manual_markers;
@@ -415,11 +433,13 @@ export default function App() {
             {voiceEnabled ? <Volume2 size={16} /> : <VolumeX size={16} />}
             <span>{voiceEnabled ? "Voice On" : "Muted"}</span>
           </button>
+
+          <PromoVideo />
         </div>
       </header>
       <section className="workspace-intro">
         <div><span className="eyebrow"><span /> EVERY CONVERSATION MATTERS</span><h1>{mode === "sign-to-speech" ? <>Your hands. <em>Your voice.</em></> : mode === "speech-to-sign" ? <>Your words. <em>Ray’s hands.</em></> : <>Small signs. <em>Endless possibilities.</em></>}</h1><p>{mode === "sign-to-speech" ? "Express yourself naturally. Turn your signs into words that connect." : mode === "speech-to-sign" ? "Speak, type, or choose a phrase. Ray brings your words to life." : "Build your vocabulary, explore signs, and make recognition your own."}</p></div>
-        <div className="intro-actions"><PromoVideo /><button type="button" className="guide-button" aria-expanded={showGuide} onClick={() => setShowGuide(v => !v)}><Sparkles size={16} /> Quick guide <ChevronRight size={15} /></button></div>
+        <div className="intro-actions"><button type="button" className="guide-button" aria-expanded={showGuide} onClick={() => setShowGuide(v => !v)}><Sparkles size={16} /> Quick guide <ChevronRight size={15} /></button></div>
       </section>
       {showGuide && <div className="quick-guide">{(mode === "sign-to-speech" ? ["Allow camera access and keep your hands in frame.", "Hold a sign steady until the progress bar fills.", "Edit, copy, or listen to your translated words."] : mode === "speech-to-sign" ? ["Record your voice, type a sentence, or choose a phrase.", "Watch Ray sign. Slow down or replay any movement.", "Try the front or hands view for a closer look."] : ["Explore reference posters or choose a sign to train.", "Capture webcam samples or import your own images.", "Review labels, then train your custom model."]).map((tip, i) => <div key={tip}><span>0{i + 1}</span><p>{tip}</p></div>)}</div>}
       <main id="workspace" className="workspace-grid">
@@ -460,8 +480,8 @@ export default function App() {
               )}
             </div>
 
-            <div className={`output-phrase ${!latestOutput ? "awaiting-sign" : ""}`} aria-live="polite">
-              {!latestOutput && <Hand size={28} />}
+            <div className={`output-phrase ${isAwaitingLiveSign ? "awaiting-sign" : ""}`} aria-live="polite">
+              {isAwaitingLiveSign && <Hand size={28} />}
               {displayedLatestText}
             </div>
 
