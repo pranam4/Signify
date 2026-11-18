@@ -1,5 +1,6 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  Box,
   Check,
   Copy,
   FileAudio,
@@ -11,6 +12,8 @@ import {
   Trash2,
   Video,
 } from "lucide-react";
+import SignAvatar3D from "./SignAvatar3D";
+import { buildLocalSignPlan } from "../utils/signAnimations";
 import { getSpeechRecognitionCtor } from "../utils/speech";
 
 function escapeRegExp(value) {
@@ -76,6 +79,7 @@ export default function SpeechToSignPanel({
   phrases,
   activeLanguage,
   activeLangConfig,
+  activeDialect = "isl-south",
 }) {
   const recognitionRef = useRef(null);
   const recorderRef = useRef(null);
@@ -88,13 +92,18 @@ export default function SpeechToSignPanel({
   const [recordingSeconds, setRecordingSeconds] = useState(0);
   const [transcribing, setTranscribing] = useState(false);
   const [liveListening, setLiveListening] = useState(false);
-  const [transcript, setTranscript] = useState("");
+  const [transcript, setTranscript] = useState("Hello, thank you");
   const [manualText, setManualText] = useState("");
   const [micError, setMicError] = useState("");
   const [sttStatus, setSttStatus] = useState(null);
   const [copied, setCopied] = useState(false);
+  const [stageMode, setStageMode] = useState("avatar3d");
   const [selectedPhraseId, setSelectedPhraseId] = useState(null);
   const [videoAvailable, setVideoAvailable] = useState(false);
+  const [signPlan, setSignPlan] = useState(() =>
+    buildLocalSignPlan("Hello, thank you", phrases)
+  );
+  const [playSignal, setPlaySignal] = useState(0);
 
   const matchedSequence = useMemo(
     () => matchPhraseSequence(phrases, transcript),
@@ -113,6 +122,43 @@ export default function SpeechToSignPanel({
       matchedSequence[0]
     );
   }, [matchedSequence, phrases, selectedPhraseId, transcript]);
+
+  const requestSignPlan = useCallback(
+    async (textToSign, { replay = true } = {}) => {
+      const cleaned = (textToSign || "").trim();
+      if (!cleaned) {
+        setSignPlan(buildLocalSignPlan("", phrases));
+        return;
+      }
+      try {
+        const res = await fetch("/api/text-to-sign", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            text: cleaned,
+            language: activeLanguage || "en",
+            dialect: activeDialect || "isl-south",
+          }),
+        });
+        if (!res.ok) throw new Error("Planner request failed");
+        const plan = await res.json();
+        setSignPlan(plan);
+        if (replay) setPlaySignal((n) => n + 1);
+      } catch {
+        setSignPlan(buildLocalSignPlan(cleaned, phrases));
+        if (replay) setPlaySignal((n) => n + 1);
+      }
+    },
+    [activeDialect, activeLanguage, phrases]
+  );
+
+  // Sync initial / edited transcript with the backend Sign Grammar Planner (debounced).
+  useEffect(() => {
+    const handle = setTimeout(() => {
+      void requestSignPlan(transcript, { replay: true });
+    }, 260);
+    return () => clearTimeout(handle);
+  }, [transcript, requestSignPlan]);
 
   // Cleanup active mic / speech recognition on unmount.
   useEffect(() => {
@@ -332,14 +378,17 @@ export default function SpeechToSignPanel({
     setTranscript(text);
     setSelectedPhraseId(phraseItem.id);
     setMicError("");
+    setPlaySignal((n) => n + 1);
   };
 
   const handleSubmitText = (e) => {
     e.preventDefault();
     if (!manualText.trim()) return;
-    setTranscript(manualText.trim());
+    const text = manualText.trim();
+    setTranscript(text);
     setSelectedPhraseId(null);
     setManualText("");
+    setPlaySignal((n) => n + 1);
   };
 
   const handleCopyTranscript = async () => {
@@ -352,21 +401,6 @@ export default function SpeechToSignPanel({
       // Ignore clipboard failures
     }
   };
-
-  const glossTokens = useMemo(() => {
-    const clean = transcript
-      .trim()
-      .replace(/[^\p{L}\p{N}\s]/gu, " ")
-      .split(/\s+/)
-      .filter(Boolean);
-    return clean.slice(0, 12);
-  }, [transcript]);
-
-  const fingerspellLetters = useMemo(() => {
-    if (matchedPhrase || glossTokens.length === 0) return [];
-    const first = glossTokens[0].toUpperCase();
-    return Array.from(first).slice(0, 14);
-  }, [matchedPhrase, glossTokens]);
 
   return (
     <section className="speech-card">
@@ -421,12 +455,12 @@ export default function SpeechToSignPanel({
             type="text"
             value={manualText}
             onChange={(e) => setManualText(e.target.value)}
-            placeholder="Or type a phrase (e.g. Thank you, Help, Water)..."
+            placeholder="Try: What is your name? / My name is Pranam / Please help..."
           />
           <button
             type="submit"
             className="icon-btn active"
-            title="Translate to Sign"
+            title="Sign with 3D Avatar"
           >
             <Send size={15} />
           </button>
@@ -480,8 +514,14 @@ export default function SpeechToSignPanel({
             setTranscript(e.target.value);
             setSelectedPhraseId(null);
           }}
-          placeholder="Click 'Record Voice (Whisper AI)', speak, then click 'Stop & Transcribe' — or type any sentence..."
+          placeholder="Speak via Whisper AI or type any sentence — the 3D avatar signs dictionary phrases and fingerspells names!"
         />
+        {signPlan?.gloss_line && (
+          <div className="gloss-plan-line">
+            <span className="gloss-badge">GLOSS PLAN</span>
+            <strong>{signPlan.gloss_line}</strong>
+          </div>
+        )}
       </div>
 
       <div className="phrase-chips">
@@ -499,88 +539,83 @@ export default function SpeechToSignPanel({
         ))}
       </div>
 
-      {matchedSequence.length > 1 && (
-        <div className="sign-sequence-strip">
-          <small>Matched Sign Sequence:</small>
-          {matchedSequence.map((item, idx) => (
-            <button
-              key={item.id}
-              type="button"
-              className={`seq-pill ${
-                matchedPhrase?.id === item.id ? "active" : ""
-              }`}
-              onClick={() => setSelectedPhraseId(item.id)}
-            >
-              {idx + 1}. {item.gloss}
-            </button>
-          ))}
+      <div className="stage-mode-bar">
+        <button
+          type="button"
+          className={`icon-btn ${stageMode === "avatar3d" ? "active" : ""}`}
+          onClick={() => setStageMode("avatar3d")}
+        >
+          <Box size={15} />
+          <span>3D Signing Avatar</span>
+        </button>
+        <button
+          type="button"
+          className={`icon-btn ${stageMode === "cue" ? "active" : ""}`}
+          onClick={() => setStageMode("cue")}
+        >
+          <Video size={15} />
+          <span>Video / Cue Card</span>
+        </button>
+      </div>
+
+      {stageMode === "avatar3d" ? (
+        <SignAvatar3D signPlan={signPlan} playSignal={playSignal} />
+      ) : (
+        <div className="sign-stage">
+          {matchedPhrase ? (
+            <>
+              <div className="sign-stage-header">
+                <span className="gloss-badge">GLOSS: {matchedPhrase.gloss}</span>
+                <span className="spoken-echo">
+                  {matchedPhrase.translations[activeLanguage] ||
+                    matchedPhrase.translations.en}
+                </span>
+              </div>
+
+              {videoAvailable ? (
+                <video
+                  key={matchedPhrase.id}
+                  src={matchedPhrase.videoUrl}
+                  controls
+                  autoPlay
+                  loop
+                  muted
+                  playsInline
+                  className="sign-video-player"
+                />
+              ) : (
+                <div className="sign-cue-fallback">
+                  {matchedPhrase.imageUrl ? (
+                    <img
+                      src={matchedPhrase.imageUrl}
+                      alt={`${matchedPhrase.gloss} reference sign`}
+                      className="sign-ref-photo"
+                    />
+                  ) : (
+                    <Hand size={36} />
+                  )}
+                  <h4>{matchedPhrase.gloss}</h4>
+                  <p>{matchedPhrase.cue}</p>
+                  <small>
+                    Optional video: place a clip at{" "}
+                    <code>frontend/public{matchedPhrase.videoUrl}</code> to play
+                    prerecorded sign video automatically.
+                  </small>
+                </div>
+              )}
+            </>
+          ) : (
+            <div className="sign-cue-fallback">
+              <Video size={32} />
+              <h4>{signPlan?.gloss_line || "Speak or choose a phrase chip above"}</h4>
+              <p>
+                Switch back to <strong>3D Signing Avatar</strong> to watch the
+                animated avatar sign &amp; fingerspell this utterance in 3D.
+              </p>
+            </div>
+          )}
         </div>
       )}
-
-      <div className="sign-stage">
-        {matchedPhrase ? (
-          <>
-            <div className="sign-stage-header">
-              <span className="gloss-badge">GLOSS: {matchedPhrase.gloss}</span>
-              <span className="spoken-echo">
-                {matchedPhrase.translations[activeLanguage] ||
-                  matchedPhrase.translations.en}
-              </span>
-            </div>
-
-            {videoAvailable ? (
-              <video
-                key={matchedPhrase.id}
-                src={matchedPhrase.videoUrl}
-                controls
-                autoPlay
-                loop
-                muted
-                playsInline
-                className="sign-video-player"
-              />
-            ) : (
-              <div className="sign-cue-fallback">
-                <Hand size={36} />
-                <h4>{matchedPhrase.gloss}</h4>
-                <p>{matchedPhrase.cue}</p>
-                <small>
-                  Optional video: place a clip at{" "}
-                  <code>frontend/public{matchedPhrase.videoUrl}</code> to play
-                  prerecorded sign video automatically.
-                </small>
-              </div>
-            )}
-          </>
-        ) : (
-          <div className="sign-cue-fallback">
-            <Video size={32} />
-            <h4>
-              {glossTokens.length > 0
-                ? `Gloss Breakdown: ${glossTokens.map((w) => w.toUpperCase()).join(" · ")}`
-                : "Speak or choose a phrase chip above"}
-            </h4>
-            {fingerspellLetters.length > 0 ? (
-              <div className="fingerspell-strip">
-                <small>Fingerspell &ldquo;{glossTokens[0]}&rdquo;:</small>
-                <div className="fingerspell-letters">
-                  {fingerspellLetters.map((ch, idx) => (
-                    <span key={`${ch}-${idx}`} className="letter-tile">
-                      {ch}
-                    </span>
-                  ))}
-                </div>
-              </div>
-            ) : (
-              <p>
-                Transcribed text appears above. Dictionary matches highlight
-                automatically, or add custom gloss entries in{" "}
-                <code>src/data/signs.json</code>.
-              </p>
-            )}
-          </div>
-        )}
-      </div>
     </section>
   );
 }

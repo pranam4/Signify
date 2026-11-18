@@ -16,6 +16,8 @@ DEFAULT_HOLISTIC_MODEL_URL = (
 BACKEND_DIR = Path(__file__).resolve().parent.parent
 DEFAULT_MODEL_PATH = BACKEND_DIR / "models" / "gesture_recognizer.task"
 DEFAULT_HOLISTIC_MODEL_PATH = BACKEND_DIR / "models" / "holistic_landmarker.task"
+DEFAULT_DATASET_DIR = BACKEND_DIR / "data" / "sign_dataset"
+DEFAULT_CUSTOM_CLASSIFIER_PATH = BACKEND_DIR / "models" / "custom_sign_classifier.pt"
 RUNNING_MODES: tuple[str, ...] = ("IMAGE", "VIDEO", "LIVE_STREAM")
 
 DEFAULT_STT_MODEL_ID = "openai/whisper-tiny"
@@ -87,6 +89,12 @@ class RecognizerConfig:
     left_zone_max_x: float = 0.35
     right_zone_min_x: float = 0.65
     invert_handedness: bool = False
+    enable_custom_classifier: bool = True
+    custom_classifier_path: Path = field(
+        default_factory=lambda: DEFAULT_CUSTOM_CLASSIFIER_PATH
+    )
+    custom_classifier_threshold: float = 0.60
+    custom_classifier_min_similarity: float = 0.45
 
 
 def config_from_env(
@@ -101,6 +109,13 @@ def config_from_env(
     holistic_path = (
         Path(override_holistic) if override_holistic else DEFAULT_HOLISTIC_MODEL_PATH
     )
+    override_custom = os.getenv("SIGNBRIDGE_CUSTOM_CLASSIFIER_PATH", "").strip()
+    custom_path = (
+        Path(override_custom) if override_custom else DEFAULT_CUSTOM_CLASSIFIER_PATH
+    )
+    raw_custom = os.getenv("SIGNBRIDGE_ENABLE_CUSTOM_CLASSIFIER", "1").strip().lower()
+    enable_custom = raw_custom not in {"0", "false", "no", "off"}
+
     if enable_holistic is None:
         raw_holistic = os.getenv("SIGNBRIDGE_ENABLE_HOLISTIC", "1").strip().lower()
         resolved_holistic = raw_holistic not in {"0", "false", "no", "off"}
@@ -112,6 +127,8 @@ def config_from_env(
         enable_holistic=resolved_holistic,
         holistic_model_path=holistic_path,
         running_mode=running_mode,
+        enable_custom_classifier=enable_custom,
+        custom_classifier_path=custom_path,
     )
 
 
@@ -153,11 +170,21 @@ def stt_config_from_env() -> SpeechToTextConfig:
 
 
 def translate_gesture_label(label: str | None) -> dict[str, str]:
-    """Return phrase translations for stock gestures or format custom Model Maker labels."""
+    """Return phrase translations for stock gestures or custom ISL sign labels."""
     if not label or label == "None":
         return {}
     if label in GESTURE_TRANSLATIONS:
         return dict(GESTURE_TRANSLATIONS[label])
+    if label in CUSTOM_SIGN_TRANSLATIONS:
+        return dict(CUSTOM_SIGN_TRANSLATIONS[label])
+    if len(label) == 1 and label.isalnum():
+        upper = label.upper()
+        return {
+            "kind": "fingerspell",
+            "en": upper,
+            "hi": upper,
+            "kn": upper,
+        }
 
     # Format custom model labels like "thank_you" or "ThankYou" into readable text.
     spaced = re.sub(r"([a-z0-9])([A-Z])", r"\1 \2", label.replace("_", " ").replace("-", " "))
@@ -170,6 +197,25 @@ def translate_gesture_label(label: str | None) -> dict[str, str]:
         "hi": humanized,
         "kn": humanized,
     }
+
+
+CUSTOM_SIGN_TRANSLATIONS: dict[str, dict[str, str]] = {
+    "Change": {"kind": "custom_sign", "en": "Change", "hi": "बदलें", "kn": "ಬದಲಾಯಿಸಿ"},
+    "Correct": {"kind": "custom_sign", "en": "Correct", "hi": "सही", "kn": "ಸರಿ"},
+    "Goodbye": {"kind": "custom_sign", "en": "Goodbye", "hi": "अलविदा", "kn": "ವಿದಾಯ"},
+    "Help": {"kind": "custom_sign", "en": "Help", "hi": "मदद", "kn": "ಸಹಾಯ"},
+    "Home": {"kind": "custom_sign", "en": "Home", "hi": "घर", "kn": "ಮನೆ"},
+    "Hug": {"kind": "custom_sign", "en": "Hug", "hi": "गले लगाना", "kn": "ಅಪ್ಪಿಕೊಳ್ಳಿ"},
+    "Meet": {"kind": "custom_sign", "en": "Meet", "hi": "मिलना", "kn": "ಭೇಟಿಯಾಗಿ"},
+    "Nice": {"kind": "custom_sign", "en": "Nice", "hi": "अच्छा", "kn": "ಚೆನ್ನಾಗಿದೆ"},
+    "No": {"kind": "custom_sign", "en": "No", "hi": "नहीं", "kn": "ಇಲ್ಲ"},
+    "Please": {"kind": "custom_sign", "en": "Please", "hi": "कृपया", "kn": "ದಯವಿಟ್ಟು"},
+    "Sorry": {"kind": "custom_sign", "en": "Sorry", "hi": "माफ़ कीजिए", "kn": "ಕ್ಷಮಿಸಿ"},
+    "Stop": {"kind": "custom_sign", "en": "Stop", "hi": "रुको", "kn": "ನಿಲ್ಲು"},
+    "Touch": {"kind": "custom_sign", "en": "Touch", "hi": "छूना", "kn": "ಸ್ಪರ್ಶಿಸಿ"},
+    "Yes": {"kind": "custom_sign", "en": "Yes", "hi": "हाँ", "kn": "ಹೌದು"},
+    "You": {"kind": "custom_sign", "en": "You", "hi": "आप", "kn": "ನೀವು"},
+}
 
 
 # Baseline labels returned by the stock MediaPipe GestureRecognizer model,

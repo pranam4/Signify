@@ -12,6 +12,7 @@ import {
   VolumeX,
 } from "lucide-react";
 import CameraCaptureStage from "./components/CameraCaptureStage";
+import SignDatasetPanel from "./components/SignDatasetPanel";
 import SpeechToSignPanel from "./components/SpeechToSignPanel";
 import signsData from "./data/signs.json";
 import { speakText } from "./utils/speech";
@@ -338,6 +339,13 @@ export default function App() {
           >
             Voice → Text &amp; Sign
           </button>
+          <button
+            type="button"
+            className={`mode-tab ${mode === "dataset" ? "active" : ""}`}
+            onClick={() => setMode("dataset")}
+          >
+            Dataset &amp; Trainer
+          </button>
         </nav>
 
         <div className="top-controls">
@@ -392,12 +400,15 @@ export default function App() {
               onSpatialUpdate={handleSpatialUpdate}
               activeLoci={activeLoci}
             />
-          ) : (
+          ) : mode === "speech-to-sign" ? (
             <SpeechToSignPanel
               phrases={signsData.speechToSignPhrases}
               activeLanguage={activeLanguage}
               activeLangConfig={activeLangConfig}
+              activeDialect={activeDialect}
             />
+          ) : (
+            <SignDatasetPanel />
           )}
         </div>
 

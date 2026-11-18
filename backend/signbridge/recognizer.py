@@ -15,6 +15,7 @@ from .config import (
     RecognizerConfig,
     translate_gesture_label,
 )
+from .custom_classifier import CustomSignClassifier, extract_sign_features
 from .model_manager import ensure_model_asset
 from .spatial_grammar import (
     SpatialGrammarState,
@@ -420,6 +421,7 @@ def build_prediction(
     immediate: bool = False,
     holistic_result: HolisticLandmarkerResult | None = None,
     spatial_tracker: SpatialGrammarTracker | None = None,
+    custom_classifier: CustomSignClassifier | None = None,
 ) -> FramePrediction:
     """Extract hand + holistic observations, compute spatial grammar, and smooth signs."""
     signing_space = None
@@ -439,6 +441,56 @@ def build_prediction(
     hands = extract_observations(result, config, signing_space=signing_space)
     if holistic_result is not None:
         hands = _merge_holistic_hands(hands, holistic_result, config, signing_space)
+
+    primary_hand: HandObservation | None = None
+    best_score = -1.0
+    for hand in hands:
+        if hand.gesture != "None" and hand.gesture_score > best_score:
+            best_score = hand.gesture_score
+            primary_hand = hand
+
+    if primary_hand is None and hands:
+        primary_hand = hands[0]
+
+    if (
+        primary_hand is not None
+        and custom_classifier is not None
+        and config.enable_custom_classifier
+    ):
+        pose_lms = (
+            getattr(holistic_result, "pose_landmarks", None)
+            if holistic_result is not None
+            else None
+        )
+        features = extract_sign_features(hands, pose_landmarks=pose_lms)
+        custom_preds = custom_classifier.predict(
+            features,
+            top_k=3,
+            min_similarity=config.custom_classifier_min_similarity,
+        )
+        if custom_preds:
+            top_custom = custom_preds[0]
+            stock_label = primary_hand.gesture
+            stock_score = primary_hand.gesture_score
+            custom_cands = [
+                GestureCandidate(
+                    category_name=p.label,
+                    score=p.score,
+                    display_name="custom_landmark",
+                )
+                for p in custom_preds
+            ]
+            seen = {c.category_name for c in custom_cands}
+            merged_cands = custom_cands + [
+                c for c in primary_hand.top_gestures if c.category_name not in seen
+            ]
+            primary_hand.top_gestures = merged_cands[:4]
+
+            if top_custom.score >= config.custom_classifier_threshold and (
+                stock_label == "None" or top_custom.score >= stock_score * 0.85
+            ):
+                primary_hand.gesture = top_custom.label
+                primary_hand.gesture_score = top_custom.score
 
     spatial_state: SpatialGrammarState | None = None
     holistic_payload: dict[str, Any] | None = None
@@ -461,16 +513,6 @@ def build_prediction(
         holistic_payload = _serialize_holistic_payload(holistic_result)
     elif not config.enable_holistic:
         holistic_payload = {"enabled": False}
-
-    primary_hand: HandObservation | None = None
-    best_score = -1.0
-    for hand in hands:
-        if hand.gesture != "None" and hand.gesture_score > best_score:
-            best_score = hand.gesture_score
-            primary_hand = hand
-
-    if primary_hand is None and hands:
-        primary_hand = hands[0]
 
     if immediate:
         # IMAGE mode runs statelessly on a single image without multi-frame buffering.
@@ -545,6 +587,11 @@ class SignGestureRecognizer:
             cooldown_seconds=self.config.cooldown_seconds,
         )
         self._spatial_tracker = SpatialGrammarTracker()
+        self._custom_classifier = (
+            CustomSignClassifier(self.config.custom_classifier_path)
+            if self.config.enable_custom_classifier
+            else None
+        )
         self._last_timestamp_ms = 0
         self._closed = False
         self._holistic_lock = threading.Lock()
@@ -597,6 +644,7 @@ class SignGestureRecognizer:
                     self._stabilizer,
                     holistic_result=holistic_res,
                     spatial_tracker=self._spatial_tracker,
+                    custom_classifier=self._custom_classifier,
                 )
                 if self._result_callback is not None:
                     self._result_callback(pred)
@@ -705,6 +753,7 @@ class SignGestureRecognizer:
                 immediate=True,
                 holistic_result=holistic_result,
                 spatial_tracker=self._spatial_tracker,
+                custom_classifier=self._custom_classifier,
             )
 
         ts = self._next_timestamp_ms(timestamp_ms)
@@ -726,6 +775,7 @@ class SignGestureRecognizer:
             self._stabilizer,
             holistic_result=holistic_result,
             spatial_tracker=self._spatial_tracker,
+            custom_classifier=self._custom_classifier,
         )
 
     def process_async_rgb(

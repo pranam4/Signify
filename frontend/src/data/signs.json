@@ -44,7 +44,8 @@
         "kn": "ದಯವಿಟ್ಟು ಸಹಾಯ ಮಾಡಿ"
       },
       "cue": "Closed fist (thumb up) resting on opposite open palm, lifting upward together.",
-      "videoUrl": "/signs/help.mp4"
+      "videoUrl": "/signs/help.mp4",
+      "imageUrl": "/signs/ref/help.jpg"
     },
     {
       "id": "yes",
@@ -56,7 +57,8 @@
         "kn": "ಹೌದು"
       },
       "cue": "Closed fist nodding cleanly forward at the wrist twice.",
-      "videoUrl": "/signs/yes.mp4"
+      "videoUrl": "/signs/yes.mp4",
+      "imageUrl": "/signs/ref/yes.jpg"
     },
     {
       "id": "no",
@@ -68,7 +70,8 @@
         "kn": "ಇಲ್ಲ"
       },
       "cue": "Index and middle fingers snap shut against the thumb cleanly in front of the chest.",
-      "videoUrl": "/signs/no.mp4"
+      "videoUrl": "/signs/no.mp4",
+      "imageUrl": "/signs/ref/no.jpg"
     },
     {
       "id": "water",
@@ -105,6 +108,186 @@
       },
       "cue": "Flat/cupped hand begins at Locus A (left zone) and arcs smoothly across signing space to Locus B (right zone).",
       "videoUrl": "/signs/give.mp4"
+    },
+    {
+      "id": "please",
+      "gloss": "PLEASE",
+      "triggers": ["please", "kindly", "कृपया", "ದಯವಿಟ್ಟು"],
+      "translations": {
+        "en": "Please",
+        "hi": "कृपया",
+        "kn": "ದಯವಿಟ್ಟು"
+      },
+      "cue": "Flat open palm placed gently over the chest/heart.",
+      "videoUrl": "/signs/please.mp4",
+      "imageUrl": "/signs/ref/please.jpg"
+    },
+    {
+      "id": "sorry",
+      "gloss": "SORRY",
+      "triggers": ["sorry", "apologize", "excuse me", "माफ़", "क्षमा", "ಕ್ಷಮಿಸಿ"],
+      "translations": {
+        "en": "Sorry",
+        "hi": "माफ़ कीजिए",
+        "kn": "ಕ್ಷಮಿಸಿ"
+      },
+      "cue": "Closed fist placed over the heart/chest with a gentle nod.",
+      "videoUrl": "/signs/sorry.mp4",
+      "imageUrl": "/signs/ref/sorry.jpg"
+    },
+    {
+      "id": "good_morning",
+      "gloss": "GOOD MORNING",
+      "triggers": ["good morning", "morning", "सुप्रभात", "ಶುಭೋದಯ"],
+      "translations": {
+        "en": "Good morning",
+        "hi": "सुप्रभात",
+        "kn": "ಶುಭೋದಯ"
+      },
+      "cue": "Flat hand touches chin, then rises gracefully from the crook of the left arm.",
+      "videoUrl": "/signs/good_morning.mp4"
+    },
+    {
+      "id": "what_name",
+      "gloss": "YOUR NAME WHAT",
+      "triggers": ["what is your name", "what is your name?"],
+      "translations": {
+        "en": "What is your name?",
+        "hi": "तुम्हारा नाम क्या है?",
+        "kn": "ನಿಮ್ಮ ಹೆಸರು ಏನು?"
+      },
+      "cue": "Extends flat palm toward listener (YOUR), taps H-hands (NAME), then shakes open palms with furrowed brows (WHAT).",
+      "videoUrl": "/signs/what_name.mp4"
+    },
+    {
+      "id": "change",
+      "gloss": "CHANGE",
+      "triggers": ["change", "switch", "modify", "badal", "बदलें", "बदलना", "ಬದಲಾಯಿಸಿ"],
+      "translations": {
+        "en": "Change",
+        "hi": "बदलें",
+        "kn": "ಬದಲಾಯಿಸಿ"
+      },
+      "cue": "Both hooked hands touch and twist smoothly past one another in front of the chest.",
+      "videoUrl": "/signs/change.mp4",
+      "imageUrl": "/signs/ref/change.jpg"
+    },
+    {
+      "id": "correct",
+      "gloss": "CORRECT",
+      "triggers": ["correct", "right", "exact", "sahi", "सही", "ಸರಿ"],
+      "translations": {
+        "en": "Correct",
+        "hi": "सही",
+        "kn": "ಸರಿ"
+      },
+      "cue": "Pinched fingertips tap cleanly onto the opposite upward-facing open palm.",
+      "videoUrl": "/signs/correct.mp4",
+      "imageUrl": "/signs/ref/correct.jpg"
+    },
+    {
+      "id": "goodbye",
+      "gloss": "GOODBYE",
+      "triggers": ["goodbye", "bye", "bye bye", "alvida", "अलविदा", "ವಿದಾಯ"],
+      "translations": {
+        "en": "Goodbye",
+        "hi": "अलविदा",
+        "kn": "ವಿದಾಯ"
+      },
+      "cue": "Open palm raised near shoulder height, waving cleanly forward.",
+      "videoUrl": "/signs/goodbye.mp4",
+      "imageUrl": "/signs/ref/goodbye.jpg"
+    },
+    {
+      "id": "home",
+      "gloss": "HOME",
+      "triggers": ["home", "house", "ghar", "घर", "ಮನೆ"],
+      "translations": {
+        "en": "Home",
+        "hi": "घर",
+        "kn": "ಮನೆ"
+      },
+      "cue": "Both flat palms touch at the fingertips forming a peaked roof in front of the chest.",
+      "videoUrl": "/signs/home.mp4",
+      "imageUrl": "/signs/ref/home.jpg"
+    },
+    {
+      "id": "hug",
+      "gloss": "HUG",
+      "triggers": ["hug", "embrace", "gale", "गले लगाना", "ಅಪ್ಪಿಕೊಳ್ಳಿ"],
+      "translations": {
+        "en": "Hug",
+        "hi": "गले लगाना",
+        "kn": "ಅಪ್ಪಿಕೊಳ್ಳಿ"
+      },
+      "cue": "Both closed fists cross over the chest in an embracing posture.",
+      "videoUrl": "/signs/hug.mp4",
+      "imageUrl": "/signs/ref/hug.jpg"
+    },
+    {
+      "id": "meet",
+      "gloss": "MEET",
+      "triggers": ["meet", "meeting", "milna", "मिलना", "ಭೇಟಿಯಾಗಿ"],
+      "translations": {
+        "en": "Meet",
+        "hi": "मिलना",
+        "kn": "ಭೇಟಿಯಾಗಿ"
+      },
+      "cue": "Both upright index fingers move smoothly together side-by-side at chest height.",
+      "videoUrl": "/signs/meet.mp4",
+      "imageUrl": "/signs/ref/meet.jpg"
+    },
+    {
+      "id": "nice",
+      "gloss": "NICE",
+      "triggers": ["nice", "good", "accha", "अच्छा", "ಚೆನ್ನಾಗಿದೆ"],
+      "translations": {
+        "en": "Nice",
+        "hi": "अच्छा",
+        "kn": "ಚೆನ್ನಾಗಿದೆ"
+      },
+      "cue": "Thumb extended upward in front of the chest.",
+      "videoUrl": "/signs/nice.mp4",
+      "imageUrl": "/signs/ref/nice.jpg"
+    },
+    {
+      "id": "stop",
+      "gloss": "STOP",
+      "triggers": ["stop", "halt", "ruko", "रुको", "ನಿಲ್ಲು"],
+      "translations": {
+        "en": "Stop",
+        "hi": "रुको",
+        "kn": "ನಿಲ್ಲು"
+      },
+      "cue": "Vertical open palm presses cleanly onto the opposite horizontal open palm.",
+      "videoUrl": "/signs/stop.mp4",
+      "imageUrl": "/signs/ref/stop.jpg"
+    },
+    {
+      "id": "touch",
+      "gloss": "TOUCH",
+      "triggers": ["touch", "tap", "chuna", "छूना", "ಸ್ಪರ್ಶಿಸಿ"],
+      "translations": {
+        "en": "Touch",
+        "hi": "छूना",
+        "kn": "ಸ್ಪರ್ಶಿಸಿ"
+      },
+      "cue": "Open palm fingertips touch gently onto the back of the opposite horizontal hand.",
+      "videoUrl": "/signs/touch.mp4",
+      "imageUrl": "/signs/ref/touch.jpg"
+    },
+    {
+      "id": "you",
+      "gloss": "YOU",
+      "triggers": ["you", "tum", "aap", "आप", "तुम", "ನೀವು"],
+      "translations": {
+        "en": "You",
+        "hi": "आप / तुम",
+        "kn": "ನೀವು"
+      },
+      "cue": "Index finger points cleanly forward toward the listener.",
+      "videoUrl": "/signs/you.mp4",
+      "imageUrl": "/signs/ref/you.jpg"
     }
   ]
 }

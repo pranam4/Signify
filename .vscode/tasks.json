@@ -1,0 +1,91 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Start Backend (FastAPI + MediaPipe)",
+      "type": "shell",
+      "windows": {
+        "command": "start_backend.bat",
+        "options": {
+          "shell": {
+            "executable": "cmd.exe",
+            "args": ["/c"]
+          }
+        }
+      },
+      "osx": {
+        "command": "cd '${workspaceFolder}/backend' && ([ -x .venv/bin/python ] || (python3 -m venv .venv && .venv/bin/pip install -r requirements.txt)) && .venv/bin/python -m uvicorn signbridge.server:app --host 127.0.0.1 --port 8000"
+      },
+      "linux": {
+        "command": "cd '${workspaceFolder}/backend' && ([ -x .venv/bin/python ] || (python3 -m venv .venv && .venv/bin/pip install -r requirements.txt)) && .venv/bin/python -m uvicorn signbridge.server:app --host 127.0.0.1 --port 8000"
+      },
+      "isBackground": true,
+      "problemMatcher": [],
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated",
+        "group": "signbridge"
+      }
+    },
+    {
+      "label": "Start Frontend (React + Vite)",
+      "type": "shell",
+      "windows": {
+        "command": "start_frontend.bat",
+        "options": {
+          "shell": {
+            "executable": "cmd.exe",
+            "args": ["/c"]
+          }
+        }
+      },
+      "osx": {
+        "command": "cd '${workspaceFolder}/frontend' && ([ -d node_modules ] || npm install) && npm run dev"
+      },
+      "linux": {
+        "command": "cd '${workspaceFolder}/frontend' && ([ -d node_modules ] || npm install) && npm run dev"
+      },
+      "isBackground": true,
+      "problemMatcher": [],
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated",
+        "group": "signbridge"
+      }
+    },
+    {
+      "label": "Start SignBridge Web App",
+      "dependsOn": [
+        "Start Backend (FastAPI + MediaPipe)",
+        "Start Frontend (React + Vite)"
+      ],
+      "dependsOrder": "parallel",
+      "group": {
+        "kind": "build",
+        "isDefault": true
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "Run Backend Tests (pytest)",
+      "type": "shell",
+      "windows": {
+        "command": "cd /d \"${workspaceFolder}\\backend\" && .venv\\Scripts\\pytest.exe -v",
+        "options": {
+          "shell": {
+            "executable": "cmd.exe",
+            "args": ["/c"]
+          }
+        }
+      },
+      "osx": {
+        "command": "cd '${workspaceFolder}/backend' && ./.venv/bin/pytest -v"
+      },
+      "linux": {
+        "command": "cd '${workspaceFolder}/backend' && ./.venv/bin/pytest -v"
+      },
+      "group": "test",
+      "problemMatcher": []
+    }
+  ]
+}

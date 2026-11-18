@@ -7,8 +7,10 @@ import threading
 
 from fastapi import FastAPI, File, HTTPException, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
 
 from .config import (
+    CUSTOM_SIGN_TRANSLATIONS,
     DEFAULT_HOLISTIC_MODEL_PATH,
     DEFAULT_MODEL_PATH,
     GESTURE_TRANSLATIONS,
@@ -16,8 +18,14 @@ from .config import (
     config_from_env,
     stt_config_from_env,
 )
+from .dataset_router import (
+    dataset_router,
+    get_custom_classifier,
+    get_dataset_store,
+)
 from .model_manager import ensure_model_asset
 from .recognizer import SignGestureRecognizer
+from .sign_planner import text_to_sign_plan
 from .speech_to_text import WhisperSpeechToText
 from .stt_router import get_stt_service, stt_router
 
@@ -37,6 +45,8 @@ async def lifespan(application: FastAPI):
     if os.getenv("SIGNBRIDGE_PRELOAD_STT", "").strip().lower() in {"1", "true", "yes"}:
         await asyncio.to_thread(stt_service.load)
     application.state.stt_service = stt_service
+    get_dataset_store(application.state)
+    get_custom_classifier(application.state)
 
     try:
         yield
@@ -47,6 +57,10 @@ async def lifespan(application: FastAPI):
                 rec.close()
         application.state.image_recognizers = {}
         application.state.image_recognizer = None
+        extractor = getattr(application.state, "dataset_extractor", None)
+        if extractor is not None:
+            extractor.close()
+            application.state.dataset_extractor = None
         stt = getattr(application.state, "stt_service", None)
         if stt is not None:
             stt.close()
@@ -63,6 +77,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 app.include_router(stt_router)
+app.include_router(dataset_router)
 
 
 def _get_image_recognizer(enable_holistic: bool | None = None) -> SignGestureRecognizer:
@@ -109,10 +124,12 @@ def health_check() -> dict[str, object]:
         else DEFAULT_HOLISTIC_MODEL_PATH
     )
     stt = get_stt_service(app.state)
+    custom_clf = get_custom_classifier(app.state)
     return {
         "status": "ok",
         "model": model_path.name,
         "custom_model": model_path.resolve() != DEFAULT_MODEL_PATH.resolve(),
+        "custom_classifier": custom_clf.status(),
         "holistic_enabled": cfg.enable_holistic,
         "holistic_model": holistic_path.name if cfg.enable_holistic else None,
         "holistic_landmarks_total": 553 if cfg.enable_holistic else 0,
@@ -139,10 +156,29 @@ def health_check() -> dict[str, object]:
     }
 
 
+class TextToSignRequest(BaseModel):
+    text: str
+    language: str = "en"
+    dialect: str = "isl-south"
+
+
 @app.get("/api/signs")
 def list_signs() -> dict[str, object]:
-    """Expose baseline gesture translation mappings."""
-    return {"gestures": GESTURE_TRANSLATIONS}
+    """Expose baseline gesture and custom ISL sign translation mappings."""
+    return {
+        "gestures": GESTURE_TRANSLATIONS,
+        "custom_signs": CUSTOM_SIGN_TRANSLATIONS,
+    }
+
+
+@app.post("/api/text-to-sign")
+def plan_text_to_sign(payload: TextToSignRequest) -> dict[str, object]:
+    """Convert spoken/typed text into ordered sign gloss steps and NMM cues."""
+    return text_to_sign_plan(
+        payload.text,
+        language=payload.language,
+        dialect=payload.dialect,
+    ).to_dict()
 
 
 @app.post("/api/recognize-image")
