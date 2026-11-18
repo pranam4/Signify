@@ -5,6 +5,7 @@ import {
   FlipHorizontal2,
   Grid,
   RefreshCw,
+  ScanFace,
   SlidersHorizontal,
   Sun,
   Upload,
@@ -19,15 +20,150 @@ const RESOLUTIONS = {
   crisp: { label: "1280×720 (HD)", width: 1280, height: 720 },
 };
 
-function getWebSocketUrl() {
+const MIRRORED_DIRECTIONAL_ACTIONS = {
+  GIVE_A_TO_B: {
+    action: "GIVE_B_TO_A",
+    phrases: {
+      kind: "spatial_verb",
+      en: "Person B gives to Person A",
+      hi: "व्यक्ति B व्यक्ति A को देता है",
+      kn: "ವ್ಯಕ್ತಿ B ವ್ಯಕ್ತಿ A ಗೆ ಕೊಡುತ್ತಾರೆ",
+    },
+  },
+  GIVE_B_TO_A: {
+    action: "GIVE_A_TO_B",
+    phrases: {
+      kind: "spatial_verb",
+      en: "Person A gives to Person B",
+      hi: "व्यक्ति A व्यक्ति B को देता है",
+      kn: "ವ್ಯಕ್ತಿ A ವ್ಯಕ್ತಿ B ಗೆ ಕೊಡುತ್ತಾರೆ",
+    },
+  },
+  SELF_TO_A: {
+    action: "SELF_TO_B",
+    phrases: {
+      kind: "spatial_verb",
+      en: "I give / direct to Person B",
+      hi: "मैं व्यक्ति B को देता हूँ",
+      kn: "ನಾನು ವ್ಯಕ್ತಿ B ಗೆ ಕೊಡುತ್ತೇನೆ",
+    },
+  },
+  SELF_TO_B: {
+    action: "SELF_TO_A",
+    phrases: {
+      kind: "spatial_verb",
+      en: "I give / direct to Person A",
+      hi: "मैं व्यक्ति A को देता हूँ",
+      kn: "ನಾನು ವ್ಯಕ್ತಿ A ಗೆ ಕೊಡುತ್ತೇನೆ",
+    },
+  },
+  A_TO_SELF: {
+    action: "B_TO_SELF",
+    phrases: {
+      kind: "spatial_verb",
+      en: "Person B gives to me",
+      hi: "व्यक्ति B मुझे देता है",
+      kn: "ವ್ಯಕ್ತಿ B ನನಗೆ ಕೊಡುತ್ತಾರೆ",
+    },
+  },
+  B_TO_SELF: {
+    action: "A_TO_SELF",
+    phrases: {
+      kind: "spatial_verb",
+      en: "Person A gives to me",
+      hi: "व्यक्ति A मुझे देता है",
+      kn: "ವ್ಯಕ್ತಿ A ನನಗೆ ಕೊಡುತ್ತಾರೆ",
+    },
+  },
+};
+
+const SENTENCE_TYPE_LABELS = {
+  statement: "Statement",
+  yes_no_question: "Y/N Question (?)",
+  wh_question: "WH-Question",
+  negation: "Negation (Head Shake)",
+  affirmation: "Affirmation (Head Nod)",
+};
+
+function getWebSocketUrl(enableHolistic) {
   const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-  return `${protocol}//${window.location.host}/ws/recognize`;
+  return `${protocol}//${window.location.host}/ws/recognize?enable_holistic=${enableHolistic}`;
 }
 
 function flipZone(zone) {
   if (zone === "left") return "right";
   if (zone === "right") return "left";
   return zone;
+}
+
+function flipHeadGesture(gesture) {
+  if (gesture === "tilt_left") return "tilt_right";
+  if (gesture === "tilt_right") return "tilt_left";
+  return gesture;
+}
+
+function mirrorHolisticForDisplay(holistic) {
+  if (!holistic || !holistic.enabled) return holistic;
+  const mirroredContours = {};
+  for (const [key, pts] of Object.entries(holistic.face_contours || {})) {
+    mirroredContours[key] = pts.map(([x, y]) => [1 - x, y]);
+  }
+  return {
+    ...holistic,
+    pose_landmarks: (holistic.pose_landmarks || []).map((lm) => ({
+      ...lm,
+      x: 1 - lm.x,
+    })),
+    face_contours: mirroredContours,
+    face_landmarks: holistic.face_landmarks
+      ? holistic.face_landmarks.map((lm) => ({ ...lm, x: 1 - lm.x }))
+      : undefined,
+  };
+}
+
+function mirrorSpatialGrammarForDisplay(sg) {
+  if (!sg) return sg;
+  const space = sg.signing_space;
+  const nmm = sg.non_manual_markers;
+  const dir = sg.directional_event;
+
+  let mirroredDir = dir;
+  if (dir) {
+    const swapped = MIRRORED_DIRECTIONAL_ACTIONS[dir.action];
+    mirroredDir = {
+      ...dir,
+      from_zone: flipZone(dir.from_zone),
+      to_zone: flipZone(dir.to_zone),
+      action: swapped ? swapped.action : dir.action,
+      phrases: swapped ? swapped.phrases : dir.phrases,
+    };
+  }
+
+  return {
+    ...sg,
+    referent_focus: flipZone(sg.referent_focus),
+    signing_space: space
+      ? {
+          ...space,
+          torso_center_x: 1 - space.torso_center_x,
+          left_boundary: 1 - space.right_boundary,
+          right_boundary: 1 - space.left_boundary,
+          body_shift: flipZone(space.body_shift),
+          shoulder_tilt_deg: -space.shoulder_tilt_deg,
+        }
+      : space,
+    non_manual_markers: nmm
+      ? {
+          ...nmm,
+          head_yaw: flipZone(nmm.head_yaw),
+          eye_gaze: flipZone(nmm.eye_gaze),
+          head_roll_deg: -nmm.head_roll_deg,
+          head_yaw_ratio: -nmm.head_yaw_ratio,
+          head_gesture: flipHeadGesture(nmm.head_gesture),
+        }
+      : nmm,
+    directional_event: mirroredDir,
+  };
 }
 
 function mirrorPredictionForDisplay(payload) {
@@ -37,6 +173,7 @@ function mirrorPredictionForDisplay(payload) {
     hands: (payload.hands || []).map((hand) => ({
       ...hand,
       spatial_zone: flipZone(hand.spatial_zone),
+      rel_xy: hand.rel_xy ? [-hand.rel_xy[0], hand.rel_xy[1]] : hand.rel_xy,
       wrist_xy: hand.wrist_xy
         ? [1 - hand.wrist_xy[0], hand.wrist_xy[1]]
         : hand.wrist_xy,
@@ -45,6 +182,8 @@ function mirrorPredictionForDisplay(payload) {
         x: 1 - lm.x,
       })),
     })),
+    holistic: mirrorHolisticForDisplay(payload.holistic),
+    spatial_grammar: mirrorSpatialGrammarForDisplay(payload.spatial_grammar),
   };
 }
 
@@ -52,6 +191,8 @@ export default function CameraCaptureStage({
   activeLanguage,
   activeDialect,
   onRecognizedEvent,
+  onDirectionalEvent,
+  onSpatialUpdate,
   activeLoci,
 }) {
   const videoRef = useRef(null);
@@ -64,12 +205,25 @@ export default function CameraCaptureStage({
   const inFlightRef = useRef(false);
   const lastFrameSentAtRef = useRef(0);
   const latestHandsRef = useRef([]);
+  const latestHolisticRef = useRef(null);
+  const latestSpatialGrammarRef = useRef(null);
+  const directionalFlashRef = useRef(null);
   const fpsCounterRef = useRef({ frames: 0, lastTick: performance.now() });
   const onRecognizedEventRef = useRef(onRecognizedEvent);
+  const onDirectionalEventRef = useRef(onDirectionalEvent);
+  const onSpatialUpdateRef = useRef(onSpatialUpdate);
 
   useEffect(() => {
     onRecognizedEventRef.current = onRecognizedEvent;
   }, [onRecognizedEvent]);
+
+  useEffect(() => {
+    onDirectionalEventRef.current = onDirectionalEvent;
+  }, [onDirectionalEvent]);
+
+  useEffect(() => {
+    onSpatialUpdateRef.current = onSpatialUpdate;
+  }, [onSpatialUpdate]);
 
   const [devices, setDevices] = useState([]);
   const [selectedDeviceId, setSelectedDeviceId] = useState("");
@@ -79,6 +233,7 @@ export default function CameraCaptureStage({
   useEffect(() => {
     mirroredRef.current = mirrored;
   }, [mirrored]);
+  const [holisticEnabled, setHolisticEnabled] = useState(true);
   const [showGuides, setShowGuides] = useState(true);
   const [showSpatialLanes, setShowSpatialLanes] = useState(true);
   const [brightness, setBrightness] = useState(105);
@@ -102,6 +257,8 @@ export default function CameraCaptureStage({
     locked_label: null,
     phrase: null,
     spatial_zone: "center",
+    holistic: null,
+    spatial_grammar: null,
   });
 
   const refreshDevices = useCallback(async () => {
@@ -188,61 +345,79 @@ export default function CameraCaptureStage({
     setImageAnalysis(null);
     setImageError("");
     latestHandsRef.current = [];
+    latestHolisticRef.current = null;
+    latestSpatialGrammarRef.current = null;
   }, []);
 
-  const handleImageUpload = useCallback(async (event) => {
-    const file = event.target.files?.[0];
-    event.target.value = "";
-    if (!file) return;
+  const handleImageUpload = useCallback(
+    async (event) => {
+      const file = event.target.files?.[0];
+      event.target.value = "";
+      if (!file) return;
 
-    setImageError("");
-    setImageBusy(true);
-    const objectUrl = URL.createObjectURL(file);
+      setImageError("");
+      setImageBusy(true);
+      const objectUrl = URL.createObjectURL(file);
 
-    try {
-      const imgDims = await new Promise((resolve, reject) => {
-        const img = new Image();
-        img.onload = () =>
-          resolve({
-            width: img.naturalWidth || 640,
-            height: img.naturalHeight || 480,
-          });
-        img.onerror = () => reject(new Error("Could not read selected image."));
-        img.src = objectUrl;
-      });
+      try {
+        const imgDims = await new Promise((resolve, reject) => {
+          const img = new Image();
+          img.onload = () =>
+            resolve({
+              width: img.naturalWidth || 640,
+              height: img.naturalHeight || 480,
+            });
+          img.onerror = () => reject(new Error("Could not read selected image."));
+          img.src = objectUrl;
+        });
 
-      const formData = new FormData();
-      formData.append("file", file);
+        const formData = new FormData();
+        formData.append("file", file);
 
-      const response = await fetch("/api/recognize-image", {
-        method: "POST",
-        body: formData,
-      });
-      const payload = await response.json();
-      if (!response.ok) {
-        throw new Error(payload?.detail || "Image recognition failed.");
+        const response = await fetch(
+          `/api/recognize-image?enable_holistic=${holisticEnabled}`,
+          {
+            method: "POST",
+            body: formData,
+          }
+        );
+        const payload = await response.json();
+        if (!response.ok) {
+          throw new Error(payload?.detail || "Image recognition failed.");
+        }
+
+        latestHandsRef.current = payload.hands || [];
+        latestHolisticRef.current = payload.holistic || null;
+        latestSpatialGrammarRef.current = payload.spatial_grammar || null;
+        setPrediction(payload);
+        setImageAnalysis({
+          url: objectUrl,
+          name: file.name,
+          width: imgDims.width,
+          height: imgDims.height,
+          hands: payload.hands || [],
+          holistic: payload.holistic || null,
+          spatial_grammar: payload.spatial_grammar || null,
+        });
+
+        if (onSpatialUpdateRef.current) {
+          onSpatialUpdateRef.current(
+            payload.spatial_grammar || null,
+            payload.holistic || null
+          );
+        }
+        if (payload.locked_label && onRecognizedEventRef.current) {
+          onRecognizedEventRef.current(payload);
+        }
+      } catch (err) {
+        URL.revokeObjectURL(objectUrl);
+        setImageError(err?.message || "Could not analyze uploaded image.");
+      } finally {
+        setImageBusy(false);
       }
-
-      latestHandsRef.current = payload.hands || [];
-      setPrediction(payload);
-      setImageAnalysis({
-        url: objectUrl,
-        name: file.name,
-        width: imgDims.width,
-        height: imgDims.height,
-        hands: payload.hands || [],
-      });
-
-      if (payload.locked_label && onRecognizedEventRef.current) {
-        onRecognizedEventRef.current(payload);
-      }
-    } catch (err) {
-      URL.revokeObjectURL(objectUrl);
-      setImageError(err?.message || "Could not analyze uploaded image.");
-    } finally {
-      setImageBusy(false);
-    }
-  }, []);
+    },
+    [holisticEnabled]
+  );
 
   // Connect WebSocket to Python MediaPipe backend with clean auto-reconnect.
   useEffect(() => {
@@ -252,7 +427,7 @@ export default function CameraCaptureStage({
     function connect() {
       if (closedByEffect) return;
       setWsStatus("connecting");
-      const ws = new WebSocket(getWebSocketUrl());
+      const ws = new WebSocket(getWebSocketUrl(holisticEnabled));
       ws.binaryType = "arraybuffer";
       wsRef.current = ws;
 
@@ -277,7 +452,27 @@ export default function CameraCaptureStage({
             ? mirrorPredictionForDisplay(rawPayload)
             : rawPayload;
           latestHandsRef.current = payload.hands || [];
+          latestHolisticRef.current = payload.holistic || null;
+          latestSpatialGrammarRef.current = payload.spatial_grammar || null;
+
+          const dirEvent = payload.spatial_grammar?.directional_event;
+          if (dirEvent) {
+            directionalFlashRef.current = {
+              event: dirEvent,
+              expiresAt: performance.now() + 2000,
+            };
+            if (onDirectionalEventRef.current) {
+              onDirectionalEventRef.current(dirEvent, payload.spatial_grammar);
+            }
+          }
+
           setPrediction(payload);
+          if (onSpatialUpdateRef.current) {
+            onSpatialUpdateRef.current(
+              payload.spatial_grammar || null,
+              payload.holistic || null
+            );
+          }
 
           fpsCounterRef.current.frames += 1;
           const now = performance.now();
@@ -317,7 +512,7 @@ export default function CameraCaptureStage({
         wsRef.current = null;
       }
     };
-  }, []);
+  }, [holisticEnabled]);
 
   // Render static image landmarks cleanly while in IMAGE analysis mode.
   useEffect(() => {
@@ -329,11 +524,14 @@ export default function CameraCaptureStage({
     const ctx = overlay.getContext("2d");
     drawOverlay(ctx, imageAnalysis.width, imageAnalysis.height, {
       hands: imageAnalysis.hands,
+      holistic: imageAnalysis.holistic,
+      spatialGrammar: imageAnalysis.spatial_grammar,
       showGuides,
       showSpatialLanes,
+      showHolistic: holisticEnabled,
       activeLoci,
     });
-  }, [imageAnalysis, showGuides, showSpatialLanes, activeLoci]);
+  }, [imageAnalysis, showGuides, showSpatialLanes, holisticEnabled, activeLoci]);
 
   // Overlay drawing + backpressure-safe frame streaming loop for live camera VIDEO mode.
   useEffect(() => {
@@ -364,11 +562,20 @@ export default function CameraCaptureStage({
           setVideoDims({ width: vw, height: vh });
         }
 
+        const nowPerf = performance.now();
+        const flash = directionalFlashRef.current;
+        const activeFlash =
+          flash && nowPerf < flash.expiresAt ? flash.event : null;
+
         const overlayCtx = overlay.getContext("2d");
         drawOverlay(overlayCtx, vw, vh, {
           hands: latestHandsRef.current,
+          holistic: latestHolisticRef.current,
+          spatialGrammar: latestSpatialGrammarRef.current,
+          directionalFlash: activeFlash,
           showGuides,
           showSpatialLanes,
+          showHolistic: holisticEnabled,
           activeLoci,
         });
 
@@ -449,6 +656,7 @@ export default function CameraCaptureStage({
     contrast,
     showGuides,
     showSpatialLanes,
+    holisticEnabled,
     activeLoci,
     imageAnalysis,
   ]);
@@ -472,6 +680,12 @@ export default function CameraCaptureStage({
   const activeDims = imageAnalysis
     ? { width: imageAnalysis.width, height: imageAnalysis.height }
     : videoDims;
+
+  const holisticCounts = prediction.holistic?.landmark_counts;
+  const nmm = prediction.spatial_grammar?.non_manual_markers;
+  const sentenceBadge = nmm
+    ? SENTENCE_TYPE_LABELS[nmm.sentence_type] || nmm.sentence_type
+    : null;
 
   return (
     <section className="capture-card">
@@ -541,6 +755,16 @@ export default function CameraCaptureStage({
               <span>Live Camera</span>
             </button>
           )}
+
+          <button
+            type="button"
+            className={`icon-btn ${holisticEnabled ? "active" : ""}`}
+            onClick={() => setHolisticEnabled((h) => !h)}
+            title="Toggle MediaPipe Holistic Landmarker (Pose + Face + Hands spatial grammar)"
+          >
+            <ScanFace size={15} />
+            <span>Holistic</span>
+          </button>
 
           <button
             type="button"
@@ -684,7 +908,7 @@ export default function CameraCaptureStage({
                   <WifiOff size={13} />
                 )}
                 {wsStatus === "connected"
-                  ? `Python MediaPipe · ${fps} FPS${
+                  ? `MediaPipe · ${fps} FPS${
                       latencyMs !== null ? ` · ${latencyMs}ms` : ""
                     }`
                   : wsStatus === "connecting"
@@ -693,9 +917,21 @@ export default function CameraCaptureStage({
               </span>
             )}
 
-            <span className="status-pill neutral">
-              Dialect: {activeDialect}
-            </span>
+            <div className="badge-cluster">
+              {holisticEnabled && holisticCounts && (
+                <span className="status-pill neutral">
+                  Holistic: {holisticCounts.total} pts
+                </span>
+              )}
+              {holisticEnabled && sentenceBadge && nmm?.sentence_type !== "statement" && (
+                <span className="status-pill nmm-active">
+                  {sentenceBadge}
+                </span>
+              )}
+              <span className="status-pill neutral">
+                Dialect: {activeDialect}
+              </span>
+            </div>
           </div>
         </div>
       </div>

@@ -2,18 +2,19 @@
 
 ## Project Structure
 
-- `backend/` — Python MediaPipe `GestureRecognizer` + FastAPI WebSocket & HTTP server
-  - `signbridge/recognizer.py` — MediaPipe `GestureRecognizer` wrapper supporting `IMAGE` (`recognize`), `VIDEO` (`recognize_for_video`), and `LIVE_STREAM` (`recognize_async`) modes, `canned_gestures_classifier_options` / `custom_gestures_classifier_options`, `hand_landmarks`, `hand_world_landmarks`, `handedness`, top-K `gestures`, and spatial zone
-  - `signbridge/config.py` — Runtime options (including optional `SIGNBRIDGE_MODEL_PATH` custom `.task` model override) and stock/custom label translation helpers
+- `backend/` — Python MediaPipe `GestureRecognizer` + `HolisticLandmarker` + FastAPI WebSocket & HTTP server
+  - `signbridge/recognizer.py` — Parallel MediaPipe `GestureRecognizer` + `HolisticLandmarker` (553 landmarks: 33 pose, 478 face + 52 blendshapes, 2×21 hands) wrapper supporting `IMAGE`, `VIDEO`, and `LIVE_STREAM` modes
+  - `signbridge/spatial_grammar.py` — Holistic Spatial Grammar & Non-Manual Marker (NMM) engine: torso-anchored Left/Center/Right & Head/Chest/Low signing space, brow question mood, head nod/shake/tilt, iris/blendshape eye gaze, body role shift, and directional verb trajectories (`A → B`)
+  - `signbridge/config.py` — Runtime options (`SIGNBRIDGE_MODEL_PATH`, `SIGNBRIDGE_HOLISTIC_MODEL_PATH`, `SIGNBRIDGE_ENABLE_HOLISTIC`) and stock/custom/directional phrase mappings
   - `signbridge/stabilizer.py` — Temporal majority-vote stabilizer and cooldown filter
-  - `signbridge/model_manager.py` — Downloads & caches `gesture_recognizer.task` in `backend/models/`
+  - `signbridge/model_manager.py` — Downloads & caches `gesture_recognizer.task` and `holistic_landmarker.task` in `backend/models/`
   - `signbridge/server.py` — FastAPI `/api/health`, `/api/signs`, `/api/recognize-image` (`IMAGE` mode), and `/ws/recognize` (`VIDEO` mode) endpoints
-  - `signbridge/webcam_demo.py` — Standalone OpenCV `LIVE_STREAM` MediaPipe webcam tester
+  - `signbridge/webcam_demo.py` — Standalone OpenCV `LIVE_STREAM` MediaPipe Holistic + Gesture webcam tester
 - `frontend/` — React + Vite UI designed for clear camera gesture capture
-  - Camera selector, HD/Fast resolution toggle, mirror toggle, brightness & contrast clarity sliders, plus static image upload (`IMAGE` mode)
-  - Framing guide box + Left/Center/Right spatial grammar lanes
-  - Pixel-aligned 21-landmark hand skeleton overlay + lighting & edge-clipping diagnostics
-  - `Sign → Text & Speech` (live Sign → Text transcript builder with Undo/Copy/Speak + optional gesture shortcuts, and Web Speech `SpeechSynthesis` in English/Hindi/Kannada) & `Speech → Sign` (Web Speech `SpeechRecognition` + phrase chips + video/cue display)
+  - Camera selector, HD/Fast resolution toggle, Holistic Spatial toggle, mirror toggle, brightness & contrast clarity sliders, plus static image upload (`IMAGE` mode)
+  - Framing guide box + body-anchored Left/Center/Right spatial grammar lanes + directional trajectory arcs
+  - Pixel-aligned 21-landmark hand skeletons + holistic upper-body pose & facial contour overlay + lighting & edge-clipping diagnostics
+  - `Sign → Text & Speech` (live Sign → Text transcript builder with NMM grammar inflection, Undo/Copy/Speak + optional gesture shortcuts, and Web Speech `SpeechSynthesis` in English/Hindi/Kannada) & `Speech → Sign` (Web Speech `SpeechRecognition` + phrase chips + video/cue display)
 
 ## Quick Start
 

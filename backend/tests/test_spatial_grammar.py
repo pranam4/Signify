@@ -211,6 +211,24 @@ def test_temporal_head_shake_nod_and_directional_verb_arc() -> None:
     )
     assert during_cd.directional_event is None
 
+    # Settled arc from Left -> Center -> A_TO_SELF
+    tracker.reset()
+    settled_xs = [0.22, 0.31, 0.44, 0.49, 0.50]
+    settled_event = None
+    for idx, wx in enumerate(settled_xs):
+        state = tracker.update(
+            timestamp_ms=4000 + idx * 150,
+            pose_landmarks=pose,
+            face_landmarks=_make_face(),
+            face_blendshapes=[],
+            hand_entries=[("Right", wx, 0.55, "Open_Palm")],
+            temporal=True,
+        )
+        if state.directional_event is not None:
+            settled_event = state.directional_event
+    assert settled_event is not None
+    assert settled_event.action == "A_TO_SELF"
+
 
 def test_face_contours_and_holistic_hand_merge_in_prediction() -> None:
     face = _make_face()

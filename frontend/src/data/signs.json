@@ -13,7 +13,7 @@
     {
       "id": "hello",
       "gloss": "HELLO",
-      "triggers": ["hello", "hi", "hey", "namaste", "namaskara"],
+      "triggers": ["hello", "hi", "hey", "namaste", "namaskara", "नमस्ते", "नमस्कार", "ನಮಸ್ಕಾರ"],
       "translations": {
         "en": "Hello",
         "hi": "नमस्ते",
@@ -25,7 +25,7 @@
     {
       "id": "thank_you",
       "gloss": "THANK YOU",
-      "triggers": ["thank you", "thanks", "thank", "dhanyawad", "dhanyavadagalu"],
+      "triggers": ["thank you", "thanks", "thank", "dhanyawad", "dhanyavadagalu", "धन्यवाद", "शुक्रिया", "ಧನ್ಯವಾದ", "ಧನ್ಯವಾದಗಳು"],
       "translations": {
         "en": "Thank you",
         "hi": "धन्यवाद",
@@ -37,7 +37,7 @@
     {
       "id": "help",
       "gloss": "HELP",
-      "triggers": ["help", "assist", "madad", "sahaya"],
+      "triggers": ["help", "assist", "madad", "sahaya", "मदद", "सहायता", "ಸಹಾಯ"],
       "translations": {
         "en": "Please help",
         "hi": "कृपया मदद करें",
@@ -49,7 +49,7 @@
     {
       "id": "yes",
       "gloss": "YES",
-      "triggers": ["yes", "yeah", "okay", "ok", "haan", "houdu"],
+      "triggers": ["yes", "yeah", "okay", "ok", "haan", "houdu", "हाँ", "हां", "ठीक है", "ಹೌದು", "ಸರಿ"],
       "translations": {
         "en": "Yes",
         "hi": "हाँ",
@@ -61,7 +61,7 @@
     {
       "id": "no",
       "gloss": "NO",
-      "triggers": ["no", "nope", "nahi", "illa"],
+      "triggers": ["no", "nope", "nahi", "illa", "नहीं", "ना", "ಇಲ್ಲ"],
       "translations": {
         "en": "No",
         "hi": "नहीं",
@@ -73,7 +73,7 @@
     {
       "id": "water",
       "gloss": "WATER",
-      "triggers": ["water", "paani", "neeru", "drink"],
+      "triggers": ["water", "paani", "neeru", "drink", "पानी", "जल", "ನೀರು"],
       "translations": {
         "en": "Water",
         "hi": "पानी",
@@ -85,7 +85,7 @@
     {
       "id": "i_love_you",
       "gloss": "I LOVE YOU",
-      "triggers": ["i love you", "love you", "love"],
+      "triggers": ["i love you", "love you", "love", "प्यार", "ಪ್ರೀತಿ"],
       "translations": {
         "en": "I love you",
         "hi": "मैं तुमसे प्यार करता हूँ",
@@ -97,7 +97,7 @@
     {
       "id": "give_a_to_b",
       "gloss": "GIVE (A → B)",
-      "triggers": ["give", "give to", "person a gives to person b", "pass"],
+      "triggers": ["give", "give to", "person a gives to person b", "pass", "देता", "दें", "दो", "ಕೊಡು", "ಕೊಡುತ್ತಾರೆ"],
       "translations": {
         "en": "Person A gives something to Person B",
         "hi": "व्यक्ति A व्यक्ति B को कुछ देता है",

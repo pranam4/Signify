@@ -501,7 +501,7 @@ def extract_non_manual_markers(
 
     # Mouth & cheek adverbial markers
     cheek_puff = blend.get("cheekPuff", 0.0) >= 0.35
-    if blend:
+    if face_blendshapes is not None:
         jaw_open = blend.get("jawOpen", 0.0)
         pucker = max(blend.get("mouthPucker", 0.0), blend.get("mouthFunnel", 0.0))
         smile = (
@@ -720,14 +720,22 @@ class SpatialGrammarTracker:
             return None
 
         latest = hist[-1]
+        prev = hist[-2]
+        is_settling = abs(latest.rel_x - prev.rel_x) < 0.12
+
         # Look back for the strongest coherent directional arc ending at the current zone.
-        best_candidate: tuple[float, _HandSample] | None = None
+        best_candidate: tuple[int, float, _HandSample] | None = None
         samples = list(hist)
         for idx, start in enumerate(samples[:-2]):
             dt = latest.timestamp_s - start.timestamp_s
             if dt < 0.18 or dt > self.hand_window_seconds:
                 continue
             if start.zone == latest.zone:
+                continue
+
+            is_cross_space = {start.zone, latest.zone} == {"left", "right"}
+            # Let cross-space A <-> B sweeps finish crossing center before triggering *_TO_SELF.
+            if not is_cross_space and not is_settling:
                 continue
 
             net_dx = latest.rel_x - start.rel_x
@@ -742,13 +750,17 @@ class SpatialGrammarTracker:
             if sub_path <= 1e-4 or (abs(net_dx) / sub_path) < 0.55:
                 continue
 
-            if best_candidate is None or abs(net_dx) > best_candidate[0]:
-                best_candidate = (abs(net_dx), start)
+            priority = 1 if is_cross_space else 0
+            if best_candidate is None or (priority, abs(net_dx)) > (
+                best_candidate[0],
+                best_candidate[1],
+            ):
+                best_candidate = (priority, abs(net_dx), start)
 
         if best_candidate is None:
             return None
 
-        displacement, start = best_candidate
+        _, displacement, start = best_candidate
         action_map = {
             ("left", "right"): "GIVE_A_TO_B",
             ("right", "left"): "GIVE_B_TO_A",

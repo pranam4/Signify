@@ -16,6 +16,36 @@ import SpeechToSignPanel from "./components/SpeechToSignPanel";
 import signsData from "./data/signs.json";
 import { speakText } from "./utils/speech";
 
+function formatNmmInflection(text, nmm, lang) {
+  if (!text || !nmm) return text;
+  if (nmm.sentence_type === "negation") {
+    const prefix = { en: "Not: ", hi: "नहीं: ", kn: "ಇಲ್ಲ: " }[lang] || "Not: ";
+    return text.toLowerCase().startsWith("no") ? text : `${prefix}${text}`;
+  }
+  if (nmm.sentence_type === "yes_no_question" || nmm.sentence_type === "wh_question") {
+    return text.endsWith("?") ? text : `${text}?`;
+  }
+  return text;
+}
+
+function formatBrowLabel(browState) {
+  if (browState === "raised") return "Raised (Y/N ?)";
+  if (browState === "furrowed") return "Furrowed (WH ?)";
+  return "Neutral";
+}
+
+function formatSentenceLabel(sentenceType) {
+  return (
+    {
+      statement: "Statement",
+      yes_no_question: "Yes/No Question",
+      wh_question: "WH-Question",
+      negation: "Negation",
+      affirmation: "Affirmation",
+    }[sentenceType] || "Statement"
+  );
+}
+
 export default function App() {
   const [mode, setMode] = useState("sign-to-speech");
   const [activeLanguage, setActiveLanguage] = useState("en");
@@ -24,12 +54,16 @@ export default function App() {
   const [latestOutput, setLatestOutput] = useState(null);
   const [history, setHistory] = useState([]);
   const [activeLoci, setActiveLoci] = useState({ left: null, right: null });
+  const [spatialGrammar, setSpatialGrammar] = useState(null);
+  const [lastDirectionalEvent, setLastDirectionalEvent] = useState(null);
+  const [applyNmmGrammar, setApplyNmmGrammar] = useState(true);
   const [voiceNotice, setVoiceNotice] = useState("");
   const [transcriptText, setTranscriptText] = useState("");
   const [autoAppendTranscript, setAutoAppendTranscript] = useState(true);
   const [gestureShortcuts, setGestureShortcuts] = useState(false);
   const [copiedTranscript, setCopiedTranscript] = useState(false);
   const transcriptUndoRef = useRef([]);
+  const lastSpatialUpdateRef = useRef(0);
 
   const activeLangConfig = useMemo(
     () =>
@@ -106,13 +140,83 @@ export default function App() {
     });
   }, [pushTranscriptSnapshot]);
 
+  const handleSpatialUpdate = useCallback((sg) => {
+    const now = performance.now();
+    if (now - lastSpatialUpdateRef.current < 120) return;
+    lastSpatialUpdateRef.current = now;
+    setSpatialGrammar(sg);
+  }, []);
+
+  const handleDirectionalEvent = useCallback(
+    (dirEvent, sg) => {
+      if (!dirEvent) return;
+      const isCrossLocus =
+        dirEvent.action === "GIVE_A_TO_B" || dirEvent.action === "GIVE_B_TO_A";
+      const hasAnchoredLoci = Boolean(activeLoci.left || activeLoci.right);
+      if (!isCrossLocus && !hasAnchoredLoci) return;
+
+      setLastDirectionalEvent(dirEvent);
+      const nmm = sg?.non_manual_markers;
+      const rawText = dirEvent.phrases?.[activeLanguage] || dirEvent.phrases?.en || dirEvent.action;
+      const text = applyNmmGrammar
+        ? formatNmmInflection(rawText, nmm, activeLanguage)
+        : rawText;
+
+      const inflectedPhrases = { ...(dirEvent.phrases || {}) };
+      if (applyNmmGrammar && nmm) {
+        for (const code of ["en", "hi", "kn"]) {
+          if (inflectedPhrases[code]) {
+            inflectedPhrases[code] = formatNmmInflection(
+              inflectedPhrases[code],
+              nmm,
+              code
+            );
+          }
+        }
+      }
+
+      const entry = {
+        id: `${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+        label: dirEvent.action,
+        text,
+        phrases: inflectedPhrases,
+        score: 0.9,
+        zone: `${dirEvent.from_zone}→${dirEvent.to_zone}`,
+        handedness: dirEvent.handedness || "Unknown",
+        sentenceType: nmm?.sentence_type || "statement",
+        candidates: [],
+        time: new Date().toLocaleTimeString([], {
+          hour: "2-digit",
+          minute: "2-digit",
+          second: "2-digit",
+        }),
+      };
+
+      setLatestOutput(entry);
+      setHistory((prev) => [entry, ...prev].slice(0, 20));
+      if (autoAppendTranscript) {
+        appendToTranscript(text);
+      }
+      triggerSpeech(text);
+    },
+    [
+      activeLanguage,
+      activeLoci.left,
+      activeLoci.right,
+      appendToTranscript,
+      applyNmmGrammar,
+      autoAppendTranscript,
+      triggerSpeech,
+    ]
+  );
+
   const handleRecognizedEvent = useCallback(
     (payload) => {
-      const text =
+      const rawText =
         payload.phrases?.[activeLanguage] ||
         payload.phrases?.en ||
         payload.locked_label;
-      if (!text) return;
+      if (!rawText) return;
 
       // Update spatial loci when Pointing_Up occurs in Left or Right lane.
       if (payload.locked_label === "Pointing_Up") {
@@ -120,6 +224,29 @@ export default function App() {
           setActiveLoci((prev) => ({ ...prev, left: "Person A" }));
         } else if (payload.spatial_zone === "right") {
           setActiveLoci((prev) => ({ ...prev, right: "Person B" }));
+        }
+      }
+
+      const nmm = payload.spatial_grammar?.non_manual_markers;
+      const shouldInflect =
+        applyNmmGrammar &&
+        payload.locked_label !== "Pointing_Up" &&
+        !(gestureShortcuts && (payload.locked_label === "Thumb_Up" || payload.locked_label === "Thumb_Down"));
+
+      const text = shouldInflect
+        ? formatNmmInflection(rawText, nmm, activeLanguage)
+        : rawText;
+
+      const inflectedPhrases = { ...(payload.phrases || {}) };
+      if (shouldInflect && nmm) {
+        for (const code of ["en", "hi", "kn"]) {
+          if (inflectedPhrases[code]) {
+            inflectedPhrases[code] = formatNmmInflection(
+              inflectedPhrases[code],
+              nmm,
+              code
+            );
+          }
         }
       }
 
@@ -131,10 +258,12 @@ export default function App() {
         id: `${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
         label: payload.locked_label,
         text,
-        phrases: payload.phrases || {},
+        phrases: inflectedPhrases,
         score: payload.locked_score || 0,
         zone: payload.spatial_zone || "center",
+        heightLevel: primaryHand?.height_level || "chest",
         handedness: primaryHand?.handedness || "Unknown",
+        sentenceType: nmm?.sentence_type || "statement",
         candidates: primaryHand?.top_gestures || [],
         time: new Date().toLocaleTimeString([], {
           hour: "2-digit",
@@ -164,6 +293,7 @@ export default function App() {
     [
       activeLanguage,
       appendToTranscript,
+      applyNmmGrammar,
       autoAppendTranscript,
       gestureShortcuts,
       handleUndoTranscript,
@@ -175,6 +305,10 @@ export default function App() {
   const displayedLatestText = latestOutput
     ? latestOutput.phrases?.[activeLanguage] || latestOutput.text
     : "Show a sign in front of the camera";
+
+  const space = spatialGrammar?.signing_space;
+  const nmm = spatialGrammar?.non_manual_markers;
+  const referentFocus = spatialGrammar?.referent_focus || "center";
 
   return (
     <div className="app-shell">
@@ -202,7 +336,7 @@ export default function App() {
             className={`mode-tab ${mode === "speech-to-sign" ? "active" : ""}`}
             onClick={() => setMode("speech-to-sign")}
           >
-            Speech → Sign
+            Voice → Text &amp; Sign
           </button>
         </nav>
 
@@ -254,6 +388,8 @@ export default function App() {
               activeLanguage={activeLanguage}
               activeDialect={activeDialectConfig.label}
               onRecognizedEvent={handleRecognizedEvent}
+              onDirectionalEvent={handleDirectionalEvent}
+              onSpatialUpdate={handleSpatialUpdate}
               activeLoci={activeLoci}
             />
           ) : (
@@ -288,6 +424,9 @@ export default function App() {
                   <span>Raw label: {latestOutput.label}</span>
                   <span>Hand: {latestOutput.handedness}</span>
                   <span>Zone: {latestOutput.zone.toUpperCase()}</span>
+                  {latestOutput.heightLevel && (
+                    <span>Level: {latestOutput.heightLevel}</span>
+                  )}
                   <span>{(latestOutput.score * 100).toFixed(0)}% conf</span>
                 </div>
                 {latestOutput.candidates?.length > 1 && (
@@ -361,6 +500,17 @@ export default function App() {
                 </label>
                 <label
                   className="check-pill"
+                  title="Inflect transcript using Holistic Non-Manual Markers (? on brow raise, Not on head shake)"
+                >
+                  <input
+                    type="checkbox"
+                    checked={applyNmmGrammar}
+                    onChange={(e) => setApplyNmmGrammar(e.target.checked)}
+                  />
+                  <span>NMM grammar</span>
+                </label>
+                <label
+                  className="check-pill"
                   title="When enabled: Thumb_Up speaks transcript, Thumb_Down undoes last sign"
                 >
                   <input
@@ -384,28 +534,98 @@ export default function App() {
 
           <section className="spatial-card">
             <div className="card-header">
-              <span>Spatial Grammar Loci</span>
+              <span>Holistic Spatial Grammar</span>
               <button
                 type="button"
                 className="text-btn"
-                onClick={() => setActiveLoci({ left: null, right: null })}
+                onClick={() => {
+                  setActiveLoci({ left: null, right: null });
+                  setLastDirectionalEvent(null);
+                }}
               >
                 Reset Loci
               </button>
             </div>
+
             <div className="loci-grid">
-              <div className={`locus-box ${activeLoci.left ? "filled" : ""}`}>
-                <small>LEFT ZONE</small>
+              <div
+                className={`locus-box ${activeLoci.left ? "filled" : ""} ${
+                  referentFocus === "left" ? "focused" : ""
+                }`}
+              >
+                <small>
+                  LEFT ZONE {referentFocus === "left" ? "· FOCUS" : ""}
+                </small>
                 <strong>{activeLoci.left || "Unassigned"}</strong>
               </div>
-              <div className={`locus-box ${activeLoci.right ? "filled" : ""}`}>
-                <small>RIGHT ZONE</small>
+              <div
+                className={`locus-box ${activeLoci.right ? "filled" : ""} ${
+                  referentFocus === "right" ? "focused" : ""
+                }`}
+              >
+                <small>
+                  RIGHT ZONE {referentFocus === "right" ? "· FOCUS" : ""}
+                </small>
                 <strong>{activeLoci.right || "Unassigned"}</strong>
               </div>
             </div>
+
+            {spatialGrammar && (
+              <div className="nmm-grid">
+                <div className="nmm-item">
+                  <small>ANCHOR</small>
+                  <strong>
+                    {space?.source === "holistic_pose" ? "Torso Pose" : "Frame"}
+                  </strong>
+                </div>
+                <div className="nmm-item">
+                  <small>CLAUSE MOOD</small>
+                  <strong>{formatSentenceLabel(nmm?.sentence_type)}</strong>
+                </div>
+                <div className="nmm-item">
+                  <small>BROWS</small>
+                  <strong>{formatBrowLabel(nmm?.brow_state)}</strong>
+                </div>
+                <div className="nmm-item">
+                  <small>GAZE / SHIFT</small>
+                  <strong>
+                    {nmm?.eye_gaze?.toUpperCase() || "CENTER"}
+                    {space?.body_shift && space.body_shift !== "center"
+                      ? ` · Shift ${space.body_shift.toUpperCase()}`
+                      : ""}
+                  </strong>
+                </div>
+              </div>
+            )}
+
+            {nmm?.modifiers?.length > 0 && (
+              <div className="nmm-pills">
+                {nmm.modifiers.map((mod) => (
+                  <span key={mod} className="nmm-pill">
+                    {mod.replace(/_/g, " ")}
+                  </span>
+                ))}
+              </div>
+            )}
+
+            {lastDirectionalEvent && (
+              <div className="directional-banner">
+                <strong>
+                  {lastDirectionalEvent.from_zone.toUpperCase()} →{" "}
+                  {lastDirectionalEvent.to_zone.toUpperCase()}
+                </strong>
+                <span>
+                  {lastDirectionalEvent.phrases?.[activeLanguage] ||
+                    lastDirectionalEvent.phrases?.en ||
+                    lastDirectionalEvent.action}
+                </span>
+              </div>
+            )}
+
             <p className="spatial-hint">
-              Point upward in the Left or Right lane to anchor Person A / Person B
-              in signing space.
+              Point up in Left/Right to anchor Locus A/B, sweep across zones for
+              directional verbs (A → B), raise brows for questions (?), or shake
+              head for negation.
             </p>
           </section>
 
@@ -443,6 +663,9 @@ export default function App() {
                       <small>
                         {item.label} · {item.zone.toUpperCase()} ·{" "}
                         {(item.score * 100).toFixed(0)}%
+                        {item.sentenceType && item.sentenceType !== "statement"
+                          ? ` · ${formatSentenceLabel(item.sentenceType)}`
+                          : ""}
                       </small>
                     </div>
                     <time>{item.time}</time>
