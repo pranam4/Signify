@@ -10,15 +10,20 @@ if errorlevel 1 (
     pause
     exit /b 1
 )
-if not exist "node_modules" (
-    echo First-time setup: installing frontend npm packages...
-    call npm install
-    if errorlevel 1 (
-        echo Failed to install npm dependencies.
-        pause
-        exit /b 1
-    )
+if not exist "node_modules\.bin\vite.cmd" goto :install_deps
+if not exist "node_modules\three\package.json" goto :install_deps
+goto :start_ui
+
+:install_deps
+echo First-time or cross-device setup: installing frontend npm packages...
+call npm install
+if errorlevel 1 (
+    echo Failed to install npm dependencies.
+    pause
+    exit /b 1
 )
+
+:start_ui
 echo Starting SignBridge React UI on http://localhost:5173 ...
 echo Make sure SignBridge Backend (port 8000) is also running in another window.
 echo.

@@ -13,10 +13,14 @@ from pydantic import BaseModel, Field
 from .config import (
     DEFAULT_CUSTOM_CLASSIFIER_PATH,
     DEFAULT_DATASET_DIR,
+    DEFAULT_ISLRTC_DICTIONARY_PATH,
+    DEFAULT_POSTER_REFERENCES_PATH,
     RecognizerConfig,
     config_from_env,
 )
 from .custom_classifier import CustomSignClassifier, train_landmark_classifier
+from .islrtc_dataset import IslrtcDictionaryStore
+from .poster_dataset import PosterReferenceStore
 from .recognizer import SignGestureRecognizer
 from .sign_dataset import SignDatasetStore
 
@@ -44,6 +48,22 @@ def get_dataset_store(app_state: Any) -> SignDatasetStore:
     if store is None:
         store = SignDatasetStore(DEFAULT_DATASET_DIR)
         app_state.dataset_store = store
+    return store
+
+
+def get_islrtc_store(app_state: Any) -> IslrtcDictionaryStore:
+    store = getattr(app_state, "islrtc_store", None)
+    if store is None:
+        store = IslrtcDictionaryStore(DEFAULT_ISLRTC_DICTIONARY_PATH)
+        app_state.islrtc_store = store
+    return store
+
+
+def get_poster_store(app_state: Any) -> PosterReferenceStore:
+    store = getattr(app_state, "poster_store", None)
+    if store is None:
+        store = PosterReferenceStore(DEFAULT_POSTER_REFERENCES_PATH)
+        app_state.poster_store = store
     return store
 
 
@@ -244,3 +264,50 @@ async def train_custom_signs(
         return await asyncio.to_thread(_train_sync, request.app.state, epochs)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@dataset_router.get("/api/dataset/references")
+def get_poster_references(
+    request: Request,
+    poster_id: str = "all",
+    q: str = "",
+) -> dict[str, Any]:
+    """Return cropped visual sign reference cards extracted from uploaded posters."""
+    store = get_poster_store(request.app.state)
+    return store.list_references(poster_id=poster_id, query=q)
+
+
+@dataset_router.get("/api/islrtc/summary")
+def get_islrtc_summary(request: Request) -> dict[str, Any]:
+    """Return metadata, categories, tutorials, and portals for the ISLRTC dataset."""
+    store = get_islrtc_store(request.app.state)
+    return store.get_summary()
+
+
+@dataset_router.get("/api/islrtc/dictionary")
+def search_islrtc_dictionary(
+    request: Request,
+    q: str = "",
+    category: str = "all",
+    limit: int = 36,
+    offset: int = 0,
+) -> dict[str, Any]:
+    """Search the harvested ISLRTC multilingual sign dictionary across EN/HI/KN."""
+    store = get_islrtc_store(request.app.state)
+    return store.search(query=q, category=category, limit=limit, offset=offset)
+
+
+@dataset_router.get("/api/islrtc/entry/{entry_id}")
+async def resolve_islrtc_entry(request: Request, entry_id: str) -> dict[str, Any]:
+    """Resolve and cache the official ISLRTC YouTube video embed for a dictionary sign."""
+    store = get_islrtc_store(request.app.state)
+    try:
+        entry = await asyncio.to_thread(store.resolve_entry_video, entry_id)
+        return {"entry": entry}
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except Exception as exc:
+        fallback = store.get_entry(entry_id)
+        if fallback is None:
+            raise HTTPException(status_code=502, detail=str(exc)) from exc
+        return {"entry": fallback, "video_error": str(exc)}

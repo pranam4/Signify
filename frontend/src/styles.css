@@ -1268,3 +1268,222 @@ body {
   align-items: center;
   gap: 4px;
 }
+
+.dataset-subtabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.islrtc-browser-shell,
+.poster-refs-shell {
+  display: grid;
+  gap: 12px;
+}
+
+.islrtc-top-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.islrtc-search-wrap {
+  flex: 1;
+  min-width: 220px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--panel-alt);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 2px 10px;
+}
+
+.islrtc-search-wrap .dataset-text-input {
+  border: none;
+  background: transparent;
+  padding-left: 0;
+  outline: none;
+}
+
+.islrtc-meta-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.islrtc-cat-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.islrtc-player-card {
+  background: #020617;
+  border: 1px solid rgba(56, 189, 248, 0.4);
+  border-radius: 12px;
+  padding: 12px;
+  display: grid;
+  gap: 10px;
+}
+
+.islrtc-iframe-wrap {
+  position: relative;
+  width: 100%;
+  max-width: 640px;
+  aspect-ratio: 16 / 9;
+  border-radius: 10px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+}
+
+.islrtc-iframe-wrap iframe {
+  width: 100%;
+  height: 100%;
+  border: 0;
+}
+
+.islrtc-results-grid,
+.poster-cards-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(195px, 1fr));
+  gap: 10px;
+  max-height: 460px;
+  overflow-y: auto;
+  padding-right: 2px;
+}
+
+.islrtc-entry-card,
+.poster-ref-card {
+  background: rgba(15, 23, 42, 0.85);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 10px;
+  display: grid;
+  gap: 6px;
+  align-content: start;
+}
+
+.islrtc-entry-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+}
+
+.islrtc-entry-title {
+  font-size: 0.9rem;
+  color: var(--text);
+  line-height: 1.3;
+}
+
+.islrtc-entry-langs {
+  display: grid;
+  gap: 2px;
+  font-size: 0.76rem;
+  color: var(--muted);
+}
+
+.cached-dot {
+  font-size: 0.65rem;
+  font-weight: 700;
+  color: #6ee7b7;
+}
+
+.islrtc-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+.islrtc-tutorials-section {
+  background: rgba(15, 23, 42, 0.55);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 12px;
+  display: grid;
+  gap: 10px;
+}
+
+.islrtc-tutorial-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 8px;
+}
+
+.islrtc-tutorial-card {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  text-align: left;
+  padding: 9px 11px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--panel-alt);
+  color: var(--text);
+  cursor: pointer;
+}
+
+.islrtc-tutorial-card:hover {
+  border-color: var(--accent);
+}
+
+.islrtc-tutorial-card strong {
+  display: block;
+  font-size: 0.8rem;
+}
+
+.islrtc-tutorial-card small {
+  color: var(--muted);
+  font-size: 0.72rem;
+}
+
+.poster-ref-thumb {
+  width: 100%;
+  height: 120px;
+  object-fit: contain;
+  background: #ffffff;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+}
+
+.poster-ref-body {
+  display: grid;
+  gap: 4px;
+}
+
+.poster-ref-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+}
+
+.poster-ref-langs {
+  font-size: 0.74rem;
+  color: var(--text);
+}
+
+.poster-ref-source {
+  font-size: 0.7rem;
+  color: var(--muted);
+}
+
+.trained-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: rgba(16, 185, 129, 0.16);
+  border: 1px solid rgba(16, 185, 129, 0.45);
+  color: #a7f3d0;
+  font-size: 0.66rem;
+  font-weight: 700;
+}

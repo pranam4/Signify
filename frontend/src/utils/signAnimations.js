@@ -864,6 +864,362 @@ export const SIGN_TRACKS = {
       right: { wrist: [-0.02, 1.26, 0.28], palm: [0, -0.96, 0.2], finger: [0.25, 0.1, 0.96], shape: "open_flat" },
     },
   ],
+  eat: [
+    {
+      t: 0.0,
+      right: { wrist: [-0.1, 1.32, 0.26], palm: [0, 0.2, -0.96], finger: [0.05, 0.9, -0.35], shape: "o_hand" },
+    },
+    {
+      t: 0.35,
+      right: { wrist: [-0.03, 1.44, 0.2], palm: [0, 0.15, -0.98], finger: [0.05, 0.88, -0.42], shape: "o_hand" },
+      head: { pitch: 0.06, yaw: 0, roll: 0 },
+    },
+    {
+      t: 0.65,
+      right: { wrist: [-0.08, 1.37, 0.24], palm: [0, 0.2, -0.96], finger: [0.05, 0.9, -0.35], shape: "o_hand" },
+    },
+    {
+      t: 1.0,
+      right: { wrist: [-0.03, 1.44, 0.2], palm: [0, 0.15, -0.98], finger: [0.05, 0.88, -0.42], shape: "o_hand" },
+    },
+  ],
+  drink: [
+    {
+      t: 0.0,
+      right: { wrist: [-0.12, 1.28, 0.28], palm: [0.92, 0, -0.35], finger: [0.25, 0.75, 0.6], shape: "cupped" },
+    },
+    {
+      t: 0.55,
+      right: { wrist: [-0.05, 1.41, 0.22], palm: [0.85, 0.35, -0.35], finger: [0.2, 0.4, 0.88], shape: "cupped" },
+      head: { pitch: -0.08, yaw: 0, roll: 0 },
+    },
+    {
+      t: 1.0,
+      right: { wrist: [-0.09, 1.35, 0.26], palm: [0.9, 0.15, -0.35], finger: [0.25, 0.65, 0.7], shape: "cupped" },
+    },
+  ],
+  more: [
+    {
+      t: 0.0,
+      left: { wrist: [0.16, 1.25, 0.28], palm: [-0.95, 0, -0.25], finger: [-0.55, 0.55, 0.62], shape: "o_hand" },
+      right: { wrist: [-0.16, 1.25, 0.28], palm: [0.95, 0, -0.25], finger: [0.55, 0.55, 0.62], shape: "o_hand" },
+    },
+    {
+      t: 0.45,
+      left: { wrist: [0.04, 1.26, 0.31], palm: [-0.96, 0, -0.2], finger: [-0.75, 0.4, 0.5], shape: "o_hand" },
+      right: { wrist: [-0.04, 1.26, 0.31], palm: [0.96, 0, -0.2], finger: [0.75, 0.4, 0.5], shape: "o_hand" },
+    },
+    {
+      t: 0.72,
+      left: { wrist: [0.1, 1.25, 0.29], palm: [-0.95, 0, -0.25], finger: [-0.6, 0.5, 0.6], shape: "o_hand" },
+      right: { wrist: [-0.1, 1.25, 0.29], palm: [0.95, 0, -0.25], finger: [0.6, 0.5, 0.6], shape: "o_hand" },
+    },
+    {
+      t: 1.0,
+      left: { wrist: [0.04, 1.26, 0.31], palm: [-0.96, 0, -0.2], finger: [-0.75, 0.4, 0.5], shape: "o_hand" },
+      right: { wrist: [-0.04, 1.26, 0.31], palm: [0.96, 0, -0.2], finger: [0.75, 0.4, 0.5], shape: "o_hand" },
+    },
+  ],
+  finish: [
+    {
+      t: 0.0,
+      left: { wrist: [0.12, 1.26, 0.25], palm: [0, 0, -1], finger: [0, 0.96, 0.2], shape: "open_spread" },
+      right: { wrist: [-0.12, 1.26, 0.25], palm: [0, 0, -1], finger: [0, 0.96, 0.2], shape: "open_spread" },
+    },
+    {
+      t: 0.55,
+      left: { wrist: [0.24, 1.24, 0.32], palm: [0.35, -0.1, 0.92], finger: [0.25, 0.9, 0.3], shape: "open_spread" },
+      right: { wrist: [-0.24, 1.24, 0.32], palm: [-0.35, -0.1, 0.92], finger: [-0.25, 0.9, 0.3], shape: "open_spread" },
+      head: { pitch: 0.06, yaw: 0, roll: 0 },
+    },
+    {
+      t: 1.0,
+      left: { wrist: [0.22, 1.24, 0.3], palm: [0.2, 0, 0.97], finger: [0.15, 0.92, 0.32], shape: "open_spread" },
+      right: { wrist: [-0.22, 1.24, 0.3], palm: [-0.2, 0, 0.97], finger: [-0.15, 0.92, 0.32], shape: "open_spread" },
+    },
+  ],
+  wait: [
+    {
+      t: 0.0,
+      left: { wrist: [0.16, 1.22, 0.3], palm: [-0.15, 0.85, 0.48], finger: [0, 0.35, 0.93], shape: "open_spread" },
+      right: { wrist: [-0.16, 1.22, 0.3], palm: [0.15, 0.85, 0.48], finger: [0, 0.35, 0.93], shape: "open_spread" },
+    },
+    {
+      t: 0.5,
+      left: { wrist: [0.18, 1.24, 0.32], palm: [-0.1, 0.88, 0.45], finger: [0, 0.42, 0.9], shape: "open_spread" },
+      right: { wrist: [-0.18, 1.2, 0.32], palm: [0.1, 0.88, 0.45], finger: [0, 0.3, 0.95], shape: "open_spread" },
+    },
+    {
+      t: 1.0,
+      left: { wrist: [0.16, 1.22, 0.31], palm: [-0.15, 0.85, 0.48], finger: [0, 0.36, 0.93], shape: "open_spread" },
+      right: { wrist: [-0.16, 1.23, 0.31], palm: [0.15, 0.85, 0.48], finger: [0, 0.4, 0.91], shape: "open_spread" },
+    },
+  ],
+  sleep: [
+    {
+      t: 0.0,
+      right: { wrist: [-0.04, 1.5, 0.22], palm: [0, 0, -1], finger: [0, 0.96, 0.2], shape: "open_spread" },
+    },
+    {
+      t: 0.65,
+      right: { wrist: [-0.03, 1.38, 0.22], palm: [0, 0.1, -0.99], finger: [0, 0.9, -0.35], shape: "cupped" },
+      head: { pitch: 0.1, yaw: 0, roll: 0.12 },
+      smile: 0.3,
+    },
+    {
+      t: 1.0,
+      right: { wrist: [-0.03, 1.36, 0.22], palm: [0, 0.15, -0.98], finger: [0, 0.88, -0.4], shape: "o_hand" },
+      head: { pitch: 0.12, yaw: 0, roll: 0.15 },
+    },
+  ],
+  pain: [
+    {
+      t: 0.0,
+      left: { wrist: [0.18, 1.26, 0.28], palm: [0, 0, -1], finger: [-0.95, 0.1, 0.2], shape: "point" },
+      right: { wrist: [-0.18, 1.26, 0.28], palm: [0, 0, -1], finger: [0.95, 0.1, 0.2], shape: "point" },
+      browFurrow: 0.85,
+      smile: 0.0,
+    },
+    {
+      t: 0.45,
+      left: { wrist: [0.09, 1.26, 0.3], palm: [0, -0.1, -0.98], finger: [-0.98, 0.05, 0.1], shape: "point" },
+      right: { wrist: [-0.09, 1.26, 0.3], palm: [0, -0.1, -0.98], finger: [0.98, 0.05, 0.1], shape: "point" },
+      browFurrow: 0.95,
+      smile: 0.0,
+    },
+    {
+      t: 0.75,
+      left: { wrist: [0.16, 1.26, 0.28], palm: [0, 0, -1], finger: [-0.95, 0.1, 0.2], shape: "point" },
+      right: { wrist: [-0.16, 1.26, 0.28], palm: [0, 0, -1], finger: [0.95, 0.1, 0.2], shape: "point" },
+      browFurrow: 0.85,
+      smile: 0.0,
+    },
+    {
+      t: 1.0,
+      left: { wrist: [0.09, 1.26, 0.3], palm: [0, -0.1, -0.98], finger: [-0.98, 0.05, 0.1], shape: "point" },
+      right: { wrist: [-0.09, 1.26, 0.3], palm: [0, -0.1, -0.98], finger: [0.98, 0.05, 0.1], shape: "point" },
+      browFurrow: 0.85,
+      smile: 0.0,
+    },
+  ],
+  bathroom: [
+    {
+      t: 0.0,
+      right: { wrist: [-0.22, 1.36, 0.26], palm: [0.1, 0, 0.98], finger: [0, 1, 0], shape: "fist" },
+    },
+    {
+      t: 0.35,
+      right: { wrist: [-0.26, 1.36, 0.26], palm: [0.35, 0, 0.92], finger: [-0.2, 0.96, 0.15], shape: "fist" },
+    },
+    {
+      t: 0.7,
+      right: { wrist: [-0.19, 1.36, 0.26], palm: [-0.25, 0, 0.95], finger: [0.2, 0.96, 0.15], shape: "fist" },
+    },
+    {
+      t: 1.0,
+      right: { wrist: [-0.22, 1.36, 0.26], palm: [0.1, 0, 0.98], finger: [0, 1, 0], shape: "fist" },
+    },
+  ],
+  book: [
+    {
+      t: 0.0,
+      left: { wrist: [0.03, 1.22, 0.3], palm: [-0.98, 0.1, 0.1], finger: [0, 0.4, 0.91], shape: "open_flat" },
+      right: { wrist: [-0.03, 1.22, 0.3], palm: [0.98, 0.1, 0.1], finger: [0, 0.4, 0.91], shape: "open_flat" },
+    },
+    {
+      t: 0.65,
+      left: { wrist: [0.1, 1.22, 0.32], palm: [-0.2, 0.92, 0.32], finger: [0.2, 0.25, 0.94], shape: "open_flat" },
+      right: { wrist: [-0.1, 1.22, 0.32], palm: [0.2, 0.92, 0.32], finger: [-0.2, 0.25, 0.94], shape: "open_flat" },
+    },
+    {
+      t: 1.0,
+      left: { wrist: [0.1, 1.22, 0.32], palm: [-0.2, 0.92, 0.32], finger: [0.2, 0.25, 0.94], shape: "open_flat" },
+      right: { wrist: [-0.1, 1.22, 0.32], palm: [0.2, 0.92, 0.32], finger: [-0.2, 0.25, 0.94], shape: "open_flat" },
+    },
+  ],
+  mom: [
+    {
+      t: 0.0,
+      right: { wrist: [-0.06, 1.38, 0.24], palm: [0.92, 0, 0.32], finger: [0, 0.98, 0.1], shape: "open_spread" },
+      smile: 0.85,
+    },
+    {
+      t: 0.5,
+      right: { wrist: [-0.03, 1.43, 0.2], palm: [0.92, 0, 0.32], finger: [0, 0.98, 0.1], shape: "open_spread" },
+      smile: 0.95,
+    },
+    {
+      t: 1.0,
+      right: { wrist: [-0.03, 1.43, 0.2], palm: [0.92, 0, 0.32], finger: [0, 0.98, 0.1], shape: "open_spread" },
+      smile: 0.85,
+    },
+  ],
+  dad: [
+    {
+      t: 0.0,
+      right: { wrist: [-0.08, 1.5, 0.24], palm: [0.92, 0, 0.32], finger: [0, 0.98, 0.1], shape: "open_spread" },
+      smile: 0.85,
+    },
+    {
+      t: 0.5,
+      right: { wrist: [-0.04, 1.55, 0.2], palm: [0.92, 0, 0.32], finger: [0, 0.98, 0.1], shape: "open_spread" },
+      smile: 0.95,
+    },
+    {
+      t: 1.0,
+      right: { wrist: [-0.04, 1.55, 0.2], palm: [0.92, 0, 0.32], finger: [0, 0.98, 0.1], shape: "open_spread" },
+      smile: 0.85,
+    },
+  ],
+  milk: [
+    {
+      t: 0.0,
+      right: { wrist: [-0.1, 1.24, 0.28], palm: [0.92, 0, 0.35], finger: [0, 1, 0], shape: "cupped" },
+    },
+    {
+      t: 0.38,
+      right: { wrist: [-0.1, 1.24, 0.28], palm: [0.92, 0, 0.35], finger: [0, 1, 0], shape: "fist" },
+    },
+    {
+      t: 0.72,
+      right: { wrist: [-0.1, 1.24, 0.28], palm: [0.92, 0, 0.35], finger: [0, 1, 0], shape: "cupped" },
+    },
+    {
+      t: 1.0,
+      right: { wrist: [-0.1, 1.24, 0.28], palm: [0.92, 0, 0.35], finger: [0, 1, 0], shape: "fist" },
+    },
+  ],
+  come: [
+    {
+      t: 0.0,
+      right: { wrist: [-0.18, 1.28, 0.38], palm: [0.2, 0.4, -0.88], finger: [0, 0.7, 0.7], shape: "point" },
+    },
+    {
+      t: 0.65,
+      right: { wrist: [-0.1, 1.28, 0.22], palm: [0.1, 0.2, -0.96], finger: [0, 0.92, -0.25], shape: "point" },
+    },
+    {
+      t: 1.0,
+      right: { wrist: [-0.1, 1.28, 0.22], palm: [0.1, 0.2, -0.96], finger: [0, 0.92, -0.25], shape: "point" },
+    },
+  ],
+  go: [
+    {
+      t: 0.0,
+      right: { wrist: [-0.12, 1.26, 0.24], palm: [0.4, 0, -0.9], finger: [0, 0.95, 0.2], shape: "point" },
+    },
+    {
+      t: 0.65,
+      right: { wrist: [-0.18, 1.26, 0.4], palm: [0.1, -0.5, 0.85], finger: [0, 0.2, 0.97], shape: "point" },
+    },
+    {
+      t: 1.0,
+      right: { wrist: [-0.18, 1.26, 0.4], palm: [0.1, -0.5, 0.85], finger: [0, 0.2, 0.97], shape: "point" },
+    },
+  ],
+  when: [
+    {
+      t: 0.0,
+      left: { wrist: [0.06, 1.24, 0.28], palm: [-0.85, 0, 0.5], finger: [0, 1, 0], shape: "point" },
+      right: { wrist: [-0.12, 1.32, 0.28], palm: [0.7, 0, 0.7], finger: [0.25, 0.92, 0.25], shape: "point" },
+      browFurrow: 0.85,
+    },
+    {
+      t: 0.5,
+      left: { wrist: [0.06, 1.24, 0.28], palm: [-0.85, 0, 0.5], finger: [0, 1, 0], shape: "point" },
+      right: { wrist: [0.02, 1.36, 0.32], palm: [0.2, -0.3, 0.92], finger: [0.4, 0.85, 0.3], shape: "point" },
+      browFurrow: 0.95,
+    },
+    {
+      t: 1.0,
+      left: { wrist: [0.06, 1.24, 0.28], palm: [-0.85, 0, 0.5], finger: [0, 1, 0], shape: "point" },
+      right: { wrist: [0.04, 1.33, 0.28], palm: [0.6, -0.2, 0.75], finger: [0.55, 0.78, 0.25], shape: "point" },
+      browFurrow: 0.9,
+    },
+  ],
+  how: [
+    {
+      t: 0.0,
+      left: { wrist: [0.05, 1.25, 0.26], palm: [-0.3, -0.35, -0.88], finger: [-0.5, -0.5, 0.7], shape: "cupped" },
+      right: { wrist: [-0.05, 1.25, 0.26], palm: [0.3, -0.35, -0.88], finger: [0.5, -0.5, 0.7], shape: "cupped" },
+      browFurrow: 0.85,
+    },
+    {
+      t: 0.65,
+      left: { wrist: [0.1, 1.23, 0.32], palm: [-0.15, 0.92, 0.32], finger: [-0.15, 0.35, 0.92], shape: "open_flat" },
+      right: { wrist: [-0.1, 1.23, 0.32], palm: [0.15, 0.92, 0.32], finger: [0.15, 0.35, 0.92], shape: "open_flat" },
+      browFurrow: 0.95,
+    },
+    {
+      t: 1.0,
+      left: { wrist: [0.1, 1.23, 0.32], palm: [-0.15, 0.92, 0.32], finger: [-0.15, 0.35, 0.92], shape: "open_flat" },
+      right: { wrist: [-0.1, 1.23, 0.32], palm: [0.15, 0.92, 0.32], finger: [0.15, 0.35, 0.92], shape: "open_flat" },
+      browFurrow: 0.9,
+    },
+  ],
+  danger: [
+    {
+      t: 0.0,
+      left: { wrist: [0.18, 1.24, 0.3], palm: [0, 0, 1], finger: [0, 0.96, 0.2], shape: "open_spread" },
+      right: { wrist: [-0.16, 1.38, 0.24], palm: [0.3, 0, 0.95], finger: [0, 0.98, 0.1], shape: "point" },
+      browFurrow: 0.9,
+      smile: 0.0,
+    },
+    {
+      t: 0.55,
+      left: { wrist: [0.22, 1.28, 0.36], palm: [0, 0, 1], finger: [0, 0.96, 0.2], shape: "open_spread" },
+      right: { wrist: [-0.12, 1.44, 0.22], palm: [0.3, 0, 0.95], finger: [0, 0.98, 0.1], shape: "point" },
+      browFurrow: 0.95,
+      head: { pitch: -0.05, yaw: 0.06, roll: 0 },
+      smile: 0.0,
+    },
+    {
+      t: 1.0,
+      left: { wrist: [0.2, 1.26, 0.34], palm: [0, 0, 1], finger: [0, 0.96, 0.2], shape: "open_spread" },
+      right: { wrist: [-0.14, 1.42, 0.24], palm: [0.3, 0, 0.95], finger: [0, 0.98, 0.1], shape: "point" },
+      browFurrow: 0.9,
+      smile: 0.0,
+    },
+  ],
+  wash: [
+    {
+      t: 0.0,
+      left: { wrist: [0.04, 1.22, 0.28], palm: [-0.2, 0.9, 0.35], finger: [-0.7, 0.2, 0.65], shape: "fist" },
+      right: { wrist: [-0.04, 1.26, 0.28], palm: [0.2, -0.9, 0.35], finger: [0.7, 0.2, 0.65], shape: "fist" },
+    },
+    {
+      t: 0.5,
+      left: { wrist: [0.02, 1.2, 0.3], palm: [-0.2, 0.9, 0.35], finger: [-0.7, 0.2, 0.65], shape: "fist" },
+      right: { wrist: [-0.02, 1.28, 0.26], palm: [0.2, -0.9, 0.35], finger: [0.7, 0.2, 0.65], shape: "fist" },
+    },
+    {
+      t: 1.0,
+      left: { wrist: [0.04, 1.22, 0.28], palm: [-0.2, 0.9, 0.35], finger: [-0.7, 0.2, 0.65], shape: "fist" },
+      right: { wrist: [-0.04, 1.26, 0.28], palm: [0.2, -0.9, 0.35], finger: [0.7, 0.2, 0.65], shape: "fist" },
+    },
+  ],
+  work: [
+    {
+      t: 0.0,
+      left: { wrist: [0.05, 1.2, 0.28], palm: [-0.2, -0.85, 0.45], finger: [-0.75, 0.2, 0.6], shape: "fist" },
+      right: { wrist: [-0.06, 1.32, 0.28], palm: [0.2, -0.85, 0.45], finger: [0.75, 0.2, 0.6], shape: "fist" },
+    },
+    {
+      t: 0.45,
+      left: { wrist: [0.05, 1.2, 0.28], palm: [-0.2, -0.85, 0.45], finger: [-0.75, 0.2, 0.6], shape: "fist" },
+      right: { wrist: [0.03, 1.24, 0.28], palm: [0.2, -0.85, 0.45], finger: [0.75, 0.2, 0.6], shape: "fist" },
+    },
+    {
+      t: 0.72,
+      left: { wrist: [0.05, 1.2, 0.28], palm: [-0.2, -0.85, 0.45], finger: [-0.75, 0.2, 0.6], shape: "fist" },
+      right: { wrist: [-0.04, 1.3, 0.28], palm: [0.2, -0.85, 0.45], finger: [0.75, 0.2, 0.6], shape: "fist" },
+    },
+    {
+      t: 1.0,
+      left: { wrist: [0.05, 1.2, 0.28], palm: [-0.2, -0.85, 0.45], finger: [-0.75, 0.2, 0.6], shape: "fist" },
+      right: { wrist: [0.03, 1.24, 0.28], palm: [0.2, -0.85, 0.45], finger: [0.75, 0.2, 0.6], shape: "fist" },
+    },
+  ],
   unknown_gloss: [
     {
       t: 0.0,

@@ -1,35 +1,54 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  BookOpen,
   Camera,
   CheckCircle2,
   Cpu,
   FolderUp,
+  Images,
   Plus,
   RefreshCw,
   Trash2,
   Upload,
 } from "lucide-react";
+import IslrtcDictionaryBrowser from "./IslrtcDictionaryBrowser";
+import PosterReferencesBrowser from "./PosterReferencesBrowser";
 
 const SUGGESTED_LABELS = [
+  "Bathroom",
+  "Book",
   "Change",
   "Correct",
+  "Dad",
+  "Drink",
+  "Eat",
+  "Finish",
   "Goodbye",
+  "Hello",
   "Help",
   "Home",
   "Hug",
   "Meet",
+  "Milk",
+  "Mom",
+  "More",
   "Nice",
   "No",
+  "Pain",
   "Please",
   "Sorry",
   "Stop",
+  "Thank You",
   "Touch",
+  "Want",
   "Yes",
   "You",
 ];
 
 const SOURCE_FILTERS = [
   { id: "all", label: "All Sources" },
+  { id: "poster_photo", label: "First Signs (Real Photos)" },
+  { id: "poster_illustrated", label: "Essentials Poster (Hands)" },
   { id: "image2_labeled", label: "Image 2 (15 Words)" },
   { id: "image1_inferred", label: "Image 1 (Inferred · Review)" },
   { id: "webcam", label: "Webcam Captured" },
@@ -57,6 +76,7 @@ export default function SignDatasetPanel({ onModelTrained }) {
   const [errorMsg, setErrorMsg] = useState("");
   const [editingSampleId, setEditingSampleId] = useState(null);
   const [editingLabelText, setEditingLabelText] = useState("");
+  const [datasetTab, setDatasetTab] = useState("trainer");
 
   const loadOverview = useCallback(async () => {
     try {
@@ -367,6 +387,50 @@ export default function SignDatasetPanel({ onModelTrained }) {
       {statusMsg && <div className="inline-ok">{statusMsg}</div>}
       {errorMsg && <div className="inline-warn">{errorMsg}</div>}
 
+      <div className="dataset-subtabs">
+        <button
+          type="button"
+          className={`icon-btn ${datasetTab === "trainer" ? "active" : ""}`}
+          onClick={() => setDatasetTab("trainer")}
+        >
+          <Cpu size={14} />
+          <span>Landmark Dataset &amp; Trainer ({overview?.total_classes ?? 0} Classes)</span>
+        </button>
+        <button
+          type="button"
+          className={`icon-btn ${datasetTab === "posters" ? "active" : ""}`}
+          onClick={() => setDatasetTab("posters")}
+        >
+          <Images size={14} />
+          <span>Uploaded Sign Posters (92 Cards)</span>
+        </button>
+        <button
+          type="button"
+          className={`icon-btn ${datasetTab === "islrtc" ? "active" : ""}`}
+          onClick={() => setDatasetTab("islrtc")}
+        >
+          <BookOpen size={14} />
+          <span>ISLRTC Official Dictionary (15,602)</span>
+        </button>
+      </div>
+
+      {datasetTab === "posters" && (
+        <PosterReferencesBrowser
+          onSelectForTraining={(lbl) => {
+            if (labelOptions.includes(lbl)) {
+              setSelectedLabel(lbl);
+              setCustomLabelInput("");
+            } else {
+              setCustomLabelInput(lbl);
+            }
+            setDatasetTab("trainer");
+          }}
+        />
+      )}
+
+      {datasetTab === "islrtc" && <IslrtcDictionaryBrowser />}
+
+      {datasetTab === "trainer" && (
       <div className="dataset-studio-grid">
         <div className="dataset-recorder-box">
           <div className="card-header">
@@ -604,6 +668,7 @@ export default function SignDatasetPanel({ onModelTrained }) {
           </div>
         </div>
       </div>
+      )}
     </section>
   );
 }

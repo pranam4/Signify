@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  BookOpen,
   Box,
   Check,
   Copy,
@@ -12,6 +13,7 @@ import {
   Trash2,
   Video,
 } from "lucide-react";
+import IslrtcDictionaryBrowser from "./IslrtcDictionaryBrowser";
 import SignAvatar3D from "./SignAvatar3D";
 import { buildLocalSignPlan } from "../utils/signAnimations";
 import { getSpeechRecognitionCtor } from "../utils/speech";
@@ -556,10 +558,29 @@ export default function SpeechToSignPanel({
           <Video size={15} />
           <span>Video / Cue Card</span>
         </button>
+        <button
+          type="button"
+          className={`icon-btn ${stageMode === "islrtc" ? "active" : ""}`}
+          onClick={() => setStageMode("islrtc")}
+        >
+          <BookOpen size={15} />
+          <span>ISLRTC Sign Videos</span>
+        </button>
       </div>
 
       {stageMode === "avatar3d" ? (
         <SignAvatar3D signPlan={signPlan} playSignal={playSignal} />
+      ) : stageMode === "islrtc" ? (
+        <div className="sign-stage">
+          <IslrtcDictionaryBrowser
+            compact
+            initialQuery={
+              matchedPhrase?.translations?.en ||
+              (transcript || "").trim().replace(/[?!.,]+/g, "").split(/\s+/)[0] ||
+              ""
+            }
+          />
+        </div>
       ) : (
         <div className="sign-stage">
           {matchedPhrase ? (

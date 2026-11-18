@@ -288,6 +288,114 @@
       "cue": "Index finger points cleanly forward toward the listener.",
       "videoUrl": "/signs/you.mp4",
       "imageUrl": "/signs/ref/you.jpg"
+    },
+    {
+      "id": "eat",
+      "gloss": "EAT",
+      "triggers": ["eat", "food", "hungry", "खाना", "ತಿನ್ನು"],
+      "translations": { "en": "Eat", "hi": "खाना", "kn": "ತಿನ್ನು" },
+      "cue": "Pinched fingertips tap gently near the lips twice.",
+      "videoUrl": "/signs/eat.mp4",
+      "imageUrl": "/signs/ref/p2_essentials_11_eat.jpg"
+    },
+    {
+      "id": "drink",
+      "gloss": "DRINK",
+      "triggers": ["drink", "sip", "thirsty", "पीना", "ಕುಡಿ"],
+      "translations": { "en": "Drink", "hi": "पीना", "kn": "ಕುಡಿ" },
+      "cue": "Curved C-hand tilts gently toward the mouth like sipping from a cup.",
+      "videoUrl": "/signs/drink.mp4",
+      "imageUrl": "/signs/ref/p2_essentials_12_drink.jpg"
+    },
+    {
+      "id": "more",
+      "gloss": "MORE",
+      "triggers": ["more", "again", "extra", "और अधिक", "ಇನ್ನೂ ಹೆಚ್ಚು"],
+      "translations": { "en": "More", "hi": "और अधिक", "kn": "ಇನ್ನೂ ಹೆಚ್ಚು" },
+      "cue": "Both pinched O-hands bring fingertips cleanly together in front of the chest.",
+      "videoUrl": "/signs/more.mp4",
+      "imageUrl": "/signs/ref/p4_first_signs_00_more.jpg"
+    },
+    {
+      "id": "finish",
+      "gloss": "FINISH",
+      "triggers": ["finish", "done", "हो गया", "समाप्त", "ಮುಗಿಯಿತು"],
+      "translations": { "en": "Finish / Done", "hi": "समाप्त", "kn": "ಮುಗಿಯಿತು" },
+      "cue": "Both open palms flip outward cleanly from the chest.",
+      "videoUrl": "/signs/finish.mp4",
+      "imageUrl": "/signs/ref/p4_first_signs_01_finish.jpg"
+    },
+    {
+      "id": "bathroom",
+      "gloss": "BATHROOM",
+      "triggers": ["bathroom", "toilet", "बाथरूम", "शौचालय", "ಸ್ನಾನಗೃಹ"],
+      "translations": { "en": "Bathroom", "hi": "बाथरूम", "kn": "ಸ್ನಾನಗೃಹ" },
+      "cue": "Closed fist shakes cleanly side-to-side near shoulder height.",
+      "videoUrl": "/signs/bathroom.mp4",
+      "imageUrl": "/signs/ref/p2_essentials_14_bathroom.jpg"
+    },
+    {
+      "id": "pain",
+      "gloss": "PAIN / SICK",
+      "triggers": ["pain", "hurt", "sick", "दर्द", "बीमार", "ನೋವು"],
+      "translations": { "en": "Pain / Sick", "hi": "दर्द", "kn": "ನೋವು" },
+      "cue": "Both index fingers point inward toward each other and pulse gently.",
+      "videoUrl": "/signs/pain.mp4",
+      "imageUrl": "/signs/ref/p2_essentials_10_pain.jpg"
+    },
+    {
+      "id": "book",
+      "gloss": "BOOK",
+      "triggers": ["book", "read", "किताब", "पुस्तक", "ಪುಸ್ತಕ"],
+      "translations": { "en": "Book", "hi": "किताब", "kn": "ಪುಸ್ತಕ" },
+      "cue": "Flat palms press together and hinge open like reading a book.",
+      "videoUrl": "/signs/book.mp4",
+      "imageUrl": "/signs/ref/p4_first_signs_08_book.jpg"
+    },
+    {
+      "id": "mom",
+      "gloss": "MOM",
+      "triggers": ["mom", "mother", "माँ", "ಅಮ್ಮ"],
+      "translations": { "en": "Mom", "hi": "माँ", "kn": "ಅಮ್ಮ" },
+      "cue": "Open five-hand thumb taps gently against the chin.",
+      "videoUrl": "/signs/mom.mp4",
+      "imageUrl": "/signs/ref/p4_first_signs_12_mom.jpg"
+    },
+    {
+      "id": "dad",
+      "gloss": "DAD",
+      "triggers": ["dad", "father", "पापा", "ಅಪ್ಪ"],
+      "translations": { "en": "Dad", "hi": "पापा", "kn": "ಅಪ್ಪ" },
+      "cue": "Open five-hand thumb taps cleanly against the forehead.",
+      "videoUrl": "/signs/dad.mp4",
+      "imageUrl": "/signs/ref/p4_first_signs_13_dad.jpg"
+    },
+    {
+      "id": "sleep",
+      "gloss": "SLEEP",
+      "triggers": ["sleep", "bed", "rest", "सोना", "ನಿದ್ರೆ"],
+      "translations": { "en": "Sleep", "hi": "सोना", "kn": "ನಿದ್ರೆ" },
+      "cue": "Open palm draws downward over the cheek/chin as head rests smoothly.",
+      "videoUrl": "/signs/sleep.mp4",
+      "imageUrl": "/signs/ref/p3_actions_08_sleep.jpg"
+    },
+    {
+      "id": "wait",
+      "gloss": "WAIT",
+      "triggers": ["wait", "hold on", "इंतज़ार", "ಕಾಯಿರಿ"],
+      "translations": { "en": "Wait", "hi": "इंतज़ार करें", "kn": "ಕಾಯಿರಿ" },
+      "cue": "Both open palms face upward/forward and wiggle fingers gently in place.",
+      "videoUrl": "/signs/wait.mp4",
+      "imageUrl": "/signs/ref/p5_emergency_13_wait.jpg"
+    },
+    {
+      "id": "danger",
+      "gloss": "DANGER",
+      "triggers": ["danger", "emergency", "careful", "खतरा", "ಅಪಾಯ"],
+      "translations": { "en": "Danger", "hi": "खतरा", "kn": "ಅಪಾಯ" },
+      "cue": "Warning palm extends forward while index alerts near cheek.",
+      "videoUrl": "/signs/danger.mp4",
+      "imageUrl": "/signs/ref/p5_emergency_18_danger.jpg"
     }
   ]
 }

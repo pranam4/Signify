@@ -22,6 +22,8 @@ from .dataset_router import (
     dataset_router,
     get_custom_classifier,
     get_dataset_store,
+    get_islrtc_store,
+    get_poster_store,
 )
 from .model_manager import ensure_model_asset
 from .recognizer import SignGestureRecognizer
@@ -47,6 +49,8 @@ async def lifespan(application: FastAPI):
     application.state.stt_service = stt_service
     get_dataset_store(application.state)
     get_custom_classifier(application.state)
+    get_islrtc_store(application.state).get_summary()
+    get_poster_store(application.state).list_references()
 
     try:
         yield
