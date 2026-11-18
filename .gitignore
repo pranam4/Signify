@@ -1,0 +1,14 @@
+# Python
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Node / Vite
+node_modules/
+dist/
+.tools/
+
+# Downloaded model bundles (auto-fetched on startup)
+backend/models/*.task
+backend/models/*.tmp

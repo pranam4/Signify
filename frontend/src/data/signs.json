@@ -1,0 +1,110 @@
+{
+  "languages": [
+    { "code": "en", "label": "English", "ttsLocale": "en-IN", "sttLocale": "en-IN" },
+    { "code": "hi", "label": "Hindi (हिन्दी)", "ttsLocale": "hi-IN", "sttLocale": "hi-IN" },
+    { "code": "kn", "label": "Kannada (ಕನ್ನಡ)", "ttsLocale": "kn-IN", "sttLocale": "kn-IN" }
+  ],
+  "dialects": [
+    { "id": "isl-south", "label": "ISL · Bengaluru / South" },
+    { "id": "isl-north", "label": "ISL · Delhi / North" },
+    { "id": "asl-us", "label": "ASL · Standard" }
+  ],
+  "speechToSignPhrases": [
+    {
+      "id": "hello",
+      "gloss": "HELLO",
+      "triggers": ["hello", "hi", "hey", "namaste", "namaskara"],
+      "translations": {
+        "en": "Hello",
+        "hi": "नमस्ते",
+        "kn": "ನಮಸ್ಕಾರ"
+      },
+      "cue": "Open palm raised near forehead/temple, moving slightly outward in a smooth wave.",
+      "videoUrl": "/signs/hello.mp4"
+    },
+    {
+      "id": "thank_you",
+      "gloss": "THANK YOU",
+      "triggers": ["thank you", "thanks", "thank", "dhanyawad", "dhanyavadagalu"],
+      "translations": {
+        "en": "Thank you",
+        "hi": "धन्यवाद",
+        "kn": "ಧನ್ಯವಾದಗಳು"
+      },
+      "cue": "Flat fingertips touch near chin, then move smoothly forward and slightly down toward the listener.",
+      "videoUrl": "/signs/thank_you.mp4"
+    },
+    {
+      "id": "help",
+      "gloss": "HELP",
+      "triggers": ["help", "assist", "madad", "sahaya"],
+      "translations": {
+        "en": "Please help",
+        "hi": "कृपया मदद करें",
+        "kn": "ದಯವಿಟ್ಟು ಸಹಾಯ ಮಾಡಿ"
+      },
+      "cue": "Closed fist (thumb up) resting on opposite open palm, lifting upward together.",
+      "videoUrl": "/signs/help.mp4"
+    },
+    {
+      "id": "yes",
+      "gloss": "YES",
+      "triggers": ["yes", "yeah", "okay", "ok", "haan", "houdu"],
+      "translations": {
+        "en": "Yes",
+        "hi": "हाँ",
+        "kn": "ಹೌದು"
+      },
+      "cue": "Closed fist nodding cleanly forward at the wrist twice.",
+      "videoUrl": "/signs/yes.mp4"
+    },
+    {
+      "id": "no",
+      "gloss": "NO",
+      "triggers": ["no", "nope", "nahi", "illa"],
+      "translations": {
+        "en": "No",
+        "hi": "नहीं",
+        "kn": "ಇಲ್ಲ"
+      },
+      "cue": "Index and middle fingers snap shut against the thumb cleanly in front of the chest.",
+      "videoUrl": "/signs/no.mp4"
+    },
+    {
+      "id": "water",
+      "gloss": "WATER",
+      "triggers": ["water", "paani", "neeru", "drink"],
+      "translations": {
+        "en": "Water",
+        "hi": "पानी",
+        "kn": "ನೀರು"
+      },
+      "cue": "W-handshape (or regional drinking cup cue) tapped gently near the chin/mouth.",
+      "videoUrl": "/signs/water.mp4"
+    },
+    {
+      "id": "i_love_you",
+      "gloss": "I LOVE YOU",
+      "triggers": ["i love you", "love you", "love"],
+      "translations": {
+        "en": "I love you",
+        "hi": "मैं तुमसे प्यार करता हूँ",
+        "kn": "ನಾನು ನಿನ್ನನ್ನು ಪ್ರೀತಿಸುತ್ತೇನೆ"
+      },
+      "cue": "Thumb, index finger, and pinky extended upward while middle and ring fingers stay folded.",
+      "videoUrl": "/signs/i_love_you.mp4"
+    },
+    {
+      "id": "give_a_to_b",
+      "gloss": "GIVE (A → B)",
+      "triggers": ["give", "give to", "person a gives to person b", "pass"],
+      "translations": {
+        "en": "Person A gives something to Person B",
+        "hi": "व्यक्ति A व्यक्ति B को कुछ देता है",
+        "kn": "ವ್ಯಕ್ತಿ A ವ್ಯಕ್ತಿ B ಗೆ ಏನನ್ನೋ ಕೊಡುತ್ತಾರೆ"
+      },
+      "cue": "Flat/cupped hand begins at Locus A (left zone) and arcs smoothly across signing space to Locus B (right zone).",
+      "videoUrl": "/signs/give.mp4"
+    }
+  ]
+}
